@@ -1,0 +1,4 @@
+nebbarrier.pl; nebspline.pl
+if [ -e nebss.dat ]; then nebspliness.pl
+fi
+evince mep.eps &

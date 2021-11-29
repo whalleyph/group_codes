@@ -1,0 +1,58 @@
+#! /usr/bin/env python
+
+import sys
+import outcar as o
+
+def pretty_print_elastic_tensor(t):
+    for r in t:
+        r = r/10.
+        print '%12.2f %12.2f %12.2f %12.2f %12.2f %12.2f' % (
+                r[0], r[1], r[2], r[3], r[4], r[5])
+    
+    return None
+
+def latex_print_elastic_tensor(t):
+    t = t/10.
+    print r"\[ \left( \begin{array}{rrrrrr}"
+    for r in t[:-1]:
+        print r'%12.0f & %12.0f & %12.0f & %12.0f & %12.0f & %12.0f \\' % (
+                r[0], r[1], r[2], r[3], r[4], r[5])
+    r = t[-1]
+    print r'%12.0f & %12.0f & %12.0f & %12.0f & %12.0f & %12.0f' % (
+                r[0], r[1], r[2], r[3], r[4], r[5])
+    print r"\end{array} \right)\]"
+    return None
+
+if __name__ == '__main__':
+
+    f = sys.argv[1]
+
+    outcar = o.outcar().read(f)
+
+    # Total elastic moduli
+    t = outcar.get_elastic_moduli_total()
+
+    # Symmetrized elastic moduli 
+    s = outcar.get_elastic_moduli_symmetric()
+
+    # Ionic contributions
+    i = outcar.get_elastic_moduli_ionic()
+
+    print '########## Symmetrized elastic moduli (GPa) ##########'
+    print
+    pretty_print_elastic_tensor(s)
+    print
+    print
+    print '########## Ionic relaxation contribution to elastic moduli (GPa) ##########'
+    print
+    pretty_print_elastic_tensor(i)
+    print
+    print
+    print '########## Total elastic moduli (GPa) ##########'
+    print
+    pretty_print_elastic_tensor(t)
+    print
+    print
+    print '########## Total elastic moduli (GPa) (latex version) ##########'
+    print
+    latex_print_elastic_tensor(t)

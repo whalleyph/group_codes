@@ -1,0 +1,225 @@
+- name: rlx
+  start_from: .
+  start_in: rlx
+  incar: |
+    IBRION = 2
+    ISIF = 7
+    ISMEAR = 0
+    LREAL = Auto
+    NSW = 10
+    POTIM = 0.1
+    PREC = Accurate
+    SIGMA = 0.05
+  kpoints: |
+    4x4x4
+    0
+    Gamma
+    4 4 4
+    0 0 0
+  exe: vasp
+  test: convergence
+
+- name: pbe0
+  type: hybrid
+  start_from: rlx
+  start_in: pbe0
+  dincar: |
+    > LHFCALC = .TRUE.
+    > ALGO = Damp
+    > TIME = 0.4
+  exe: vasp
+  test: completion, convergence
+
+- name: hse06
+  type: hybrid
+  start_from: rlx
+  start_in: hse06
+  dincar: |
+    > LHFCALC = .TRUE.
+    > ALGO = Damp
+    > TIME = 0.4
+    > HFSCREEN = 0.2
+  exe: vasp
+  test: completion, convergence
+
+- name: hf
+  type: hybrid
+  start_from: rlx
+  start_in: hf
+  dincar: |
+    > LHFCALC = .TRUE.
+    > ALGO = Damp
+    > TIME = 0.4
+    > AEXX = 1.0
+    > ALDAC = 0.0
+    > AGGAC = 0
+  exe: vasp
+  test: completion, convergence
+
+- name: b3lyp
+  type: hybrid
+  start_from: rlx
+  start_in: b3lyp
+  dincar: |
+    > LHFCALC = .TRUE.
+    > ALGO = Damp
+    > TIME = 0.4
+    > GGA = B3
+    > AEXX = 0.2
+    > AGGAX = 0.72
+    > AGGAC = 0.81
+    > ALDAC = 0.19
+  exe: vasp
+  test: completion, convergence
+
+# Electronic density of states
+
+- name: dos
+  start_from: rlx
+  start_in: rlx/dos
+  dincar: |
+    > LORBIT = 11
+  exe: vasp
+  test: completion, convergence
+
+- name: pbe0
+  type: hybrid
+  start_from: pbe0
+  start_in: pbe0/dos
+  dincar: |
+    > LORBIT = 11
+  exe: vasp
+  test: completion, convergence
+
+- name: hse06
+  type: hybrid
+  start_from: hse06
+  start_in: hse06/dos
+  dincar: |
+    > LORBIT = 11
+  exe: vasp
+  test: completion, convergence
+
+- name: hf
+  type: hybrid
+  start_from: hf
+  start_in: hf/dos
+  dincar: |
+    > LORBIT = 11
+  exe: vasp
+  test: completion, convergence
+
+- name: b3lyp
+  type: hybrid
+  start_from: b3lyp
+  start_in: b3lyp/dos
+  dincar: |
+    > LORBIT = 11
+  exe: vasp
+  test: completion, convergence
+
+# Band structure calculations
+
+- name: rlx_dos
+  start_from: rlx
+  start_in: rlx/band
+  dincar: |
+    - IBRION
+    - NSW
+    > ICHARG = 11
+  kpoints: |
+    L - G - X                                                                                     
+    10                                                                                            
+    line                                                                                          
+    rec                                                                                           
+    0.5 0.5 0.5 1                                                                                 
+    0.0 0.0 0.0 1                                                                                 
+                                                                                                  
+    0.05 0.0 0.0 1
+    0.95 0.0 0.0 1      
+  exe: vasp
+  test: completion, convergence
+
+- name: pbe0
+  type: hybrid_band
+  start_from: pbe0
+  start_in: pbe0/band
+  dincar: |
+    - IBRION
+    - NSW
+    > ICHARG = 11
+  kpoints: |
+    L - G - X                                                                                     
+    10                                                                                            
+    line                                                                                          
+    rec                                                                                           
+    0.5 0.5 0.5 1                                                                                 
+    0.0 0.0 0.0 1                                                                                 
+                                                                                                  
+    0.05 0.0 0.0 1
+    0.95 0.0 0.0 1      
+  exe: vasp
+  test: completion, convergence
+
+- name: hse06
+  type: hybrid_band
+  start_from: hse06
+  start_in: hse06/band
+  dincar: |
+    - IBRION
+    - NSW
+    > ICHARG = 11
+  kpoints: |
+    L - G - X                                                                                     
+    10                                                                                            
+    line                                                                                          
+    rec                                                                                           
+    0.5 0.5 0.5 1                                                                                 
+    0.0 0.0 0.0 1                                                                                 
+                                                                                                  
+    0.05 0.0 0.0 1
+    0.95 0.0 0.0 1      
+  exe: vasp
+  test: completion, convergence
+
+- name: hf
+  type: hybrid_band
+  start_from: hf
+  start_in: hf/band
+  dincar: |
+    - IBRION
+    - NSW
+    > ICHARG = 11
+  kpoints: |
+    L - G - X                                                                                     
+    10                                                                                            
+    line                                                                                          
+    rec                                                                                           
+    0.5 0.5 0.5 1                                                                                 
+    0.0 0.0 0.0 1                                                                                 
+                                                                                                  
+    0.05 0.0 0.0 1
+    0.95 0.0 0.0 1      
+  exe: vasp
+  test: completion, convergence
+
+- name: b3lyp
+  type: hybrid_band
+  start_from: b3lyp
+  start_in: b3lyp/band
+  dincar: |
+    - IBRION
+    - NSW
+    > ICHARG = 11
+  kpoints: |
+    L - G - X                                                                                     
+    10                                                                                            
+    line                                                                                          
+    rec                                                                                           
+    0.5 0.5 0.5 1                                                                                 
+    0.0 0.0 0.0 1                                                                                 
+                                                                                                  
+    0.05 0.0 0.0 1
+    0.95 0.0 0.0 1      
+  exe: vasp
+  test: completion, convergence

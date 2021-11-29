@@ -1,0 +1,28 @@
+#! /usr/bin/env python
+
+from shutil import copy
+from glob import glob
+import os
+
+poscars = glob('POSCAR-???')
+
+for f in poscars:
+    n = f.split('-')[-1]
+    d = 'disp-' + n
+    if os.path.exists(d):
+        print '%s exists. Skipping ...' % (d)
+    else:
+        os.mkdir(d)
+        src_files = 'INCAR POTCAR KPOINTS'.split()
+        src_files.append(f)
+        src_files.append('sub')
+
+        dst_files = 'INCAR POTCAR KPOINTS POSCAR sub'.split()
+
+        for sf, df in zip(src_files, dst_files):
+            src = sf
+            dst = os.path.join(d, df)
+            try:
+                copy(src, dst)
+            except:
+                print 'Could not copy %s to %s' % (src, dst)

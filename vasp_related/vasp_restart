@@ -1,0 +1,10 @@
+#! /bin/bash
+
+dir1=$1
+dir2=$2
+
+mkdir -p $dir2
+cp $dir1/INCAR $dir1/KPOINTS $dir1/POTCAR $dir2/
+cp $dir1/CONTCAR $dir2/POSCAR || cp $dir1/POSCAR $dir2/POSCAR
+cp $dir1/NEWMODECAR $dir2/MODECAR || cp $dir1/MODECAR $dir2/MODECAR
+cp $dir1/sub $dir2/

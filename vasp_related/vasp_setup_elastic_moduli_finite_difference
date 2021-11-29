@@ -1,0 +1,49 @@
+#! /usr/bin/env python
+
+import os
+import incar
+import vaspcopy
+import argparse
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=
+                'Setup calculation for elastic moduli using VASP')
+    parser.add_argument('-i', '--initial',
+            help='copy initial files (INCAR, POSCAR, KPOINTS, POTCAR)',
+            action='store_true')
+    parser.add_argument('-f', '--final',
+            help='copy final files if possible; else initial files',
+            action='store_true', default=True)
+    parser.add_argument('-fl', '--final_link',
+            help='same as -f but also creat symlinks to WAVECAR and CHGCAR',
+            action='store_true')
+
+    args = parser.parse_args()
+    # print args
+
+    src_dir = 'bulk'
+    dst_dir = os.path.join('elastic_moduli', 'finite_difference')
+    os.makedirs(dst_dir)
+    if args.initial:
+        'Copying initial files to eastic_moduli'
+        vaspcopy.copy_initial(src_dir, dst_dir)
+    if args.final:
+        'Copying final files to eastic_moduli'
+        vaspcopy.copy_final(src_dir, dst_dir)
+    if args.final_link:
+        'Copying final files and creating links to eastic_moduli'
+        vaspcopy.copy_final(src_dir, dst_dir, link=True)
+    print
+    fincar = os.path.join(dst_dir, 'INCAR')
+    inc = incar.incar().read(fincar) 
+    print 'Setting IBRION in INCAR to 6 as recommended in VASP manual'
+    print 'Setting POTIM in INCAR to 0.015 as recommended in VASP manual'
+    print 'Setting NSW   in INCAR to 1'
+    print 'Setting NFREE in INCAR to 2'
+    print 'Setting ISIF in INCAR to 3'
+    inc.settag('ibrion = 6, potim = 0.015, nsw = 1, nfree = 2, isif = 3')
+    print 'Unsetting EDIFFG'
+    inc.unsettag('ediffg lorbit')
+    if int(inc.tags['ismear']) == -5:
+        print 'WARNING: ISMEAR has been set to -5 and is not recommended as it does not give accurate forces and stresses'
+    inc.write(fincar)

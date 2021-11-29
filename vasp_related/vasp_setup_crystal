@@ -1,0 +1,39 @@
+#! /usr/bin/env python
+
+import ase
+from ase.io import vasp
+import ase.lattice.spacegroup
+from ase.calculators.vasp import Vasp
+
+# Make the crystal
+a = 3.9242
+crys = ase.lattice.spacegroup.crystal('Pt', [(0, 0, 0)], spacegroup=225, cellpar=[a,a,a,90,90,90])
+
+# Set the encut, kpoints and XC
+encut = 400.
+kpoints = (16,16,16)
+xc = 'PBE'
+
+# Set up the calculation parameters
+calculator = Vasp(prec = 'Normal',
+                encut = encut,
+                lreal = 'Auto',
+                ismear = 1,
+                sigma = 0.1,
+                kpts = kpoints,
+                isif = 7,
+                ibrion = 2,
+                nsw = 40,
+                xc = xc
+                )
+
+# Attach the calculator
+crys.set_calculator(calculator)
+
+# Write out the input files
+calculator.initialize(crys)
+vasp.write_vasp('POSCAR', calculator.atoms_sorted, symbol_count = calculator.symbol_count, direct=True, sort=True)
+calculator.write_incar(crys)
+calculator.write_kpoints()
+calculator.write_potcar()
+open('ready', 'w')

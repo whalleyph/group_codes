@@ -1,0 +1,23 @@
+#! /usr/bin/env python
+
+import argparse
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('ev', type=float)
+parser.add_argument('-i', '--inverse', action='store_true', default=False)
+
+args = parser.parse_args()
+
+Na = 6.0221415e23   # species/mole
+eV = 1.6021917e-19  # J/eV
+
+if not args.inverse:
+    ev = args.ev
+    print '%10.3f eV = %10.2f kJ/mole' % (ev, ev*eV*Na/1e3)
+    print '%10.3f eV = %10.2f kcal/mole' % (ev, ev*eV*Na/(4.184*1e3))
+
+if args.inverse:
+    kJ = args.ev
+    print '%10.3f kJ/mole = %10.3f eV' % (kJ, kJ*1e3/(eV*Na))
+    print '%10.3f kJ/mole = %10.3f meV' % (kJ, kJ*1e6/(eV*Na))

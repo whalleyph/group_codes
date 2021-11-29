@@ -1,0 +1,59 @@
+#! /usr/bin/env python
+
+import os, sys
+import numpy as np
+import ase.io
+
+def get_supercell(atoms, n):
+    cell = atoms.get_cell()
+    n1, n2, n3 = n
+    symbols = atoms.get_chemical_symbols()
+    scaled_positions = atoms.get_scaled_positions()
+    super_symbols = []
+    super_scaled_positions = []
+    constraints = atoms.constraints
+    #print constraints
+    for a in range(len(symbols)):
+        sym = symbols[a]
+        x, y, z = scaled_positions[a]
+        for i in range(n1):
+            for j in range(n2):
+                for k in range(n3):
+                    super_symbols.append(sym)
+                    sx, sy, sz = [(x+i)/n1, (y+j)/n2, (z+k)/n3]
+                    super_scaled_positions.append([sx, sy, sz])
+    #print super_scaled_positions
+    #print super_symbols
+
+    super_atoms = ase.Atoms(super_symbols) 
+    super_atoms.set_cell(np.array([n1,n2,n3])*cell)
+    super_atoms.set_scaled_positions(super_scaled_positions)
+
+    return super_atoms
+
+#print super_atoms
+
+if __name__ == '__main__':
+
+    if len(sys.argv) < 4:
+        print 'Usage: %s <n1> <n2> <n3> [file POSCAR]' % (sys.argv[0])
+        sys.exit(-1)
+
+    n1 = int(sys.argv[1])
+    n2 = int(sys.argv[2])
+    n3 = int(sys.argv[3])
+
+    if not sys.argv[4]:
+        fposcar = 'POSCAR'
+    else:
+        fposcar = sys.argv[4]
+
+    atoms = ase.io.read(fposcar, format='vasp')
+
+    supercell = get_supercell(atoms, (n1, n2, n3))
+    f = 'POSCAR.supercell.vasp'
+    ase.io.write(f, supercell, format='vasp', direct=True, vasp5=True)
+
+    print """Any constraints in the original cell are lost
+    Place constraints as required in the new supercell
+    Supercell in %s""" % (f)

@@ -1,0 +1,41 @@
+#! /usr/bin/env python
+
+"""
+Plots total energy from OSZICAR/vasp.out files
+"""
+
+import matplotlib.pyplot as plt
+import numpy as np
+import oszicar as osz
+import argparse
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(
+            description='Plots total energy from OSZICAR/vasp.out files')
+
+    parser.add_argument('-i', '--input-files', nargs='*', default=['vasp.out'])
+    parser.add_argument('-a', '--append', action='store_true', default=False)
+    parser.add_argument('-l', '--log', action='store_true', default=False)
+
+    args = parser.parse_args()
+
+    files = args.input_files
+
+    engs = {}
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    for f in files:
+        engs[f] = osz.oszicar().read(f).get_e0()
+
+    if args.append:
+        eng = np.concatenate(engs.values()).flatten()
+        ax.plot(eng)
+    else:
+        for f in engs.keys():
+            ax.plot(engs[f], label=f)
+
+    plt.legend()
+    plt.show()

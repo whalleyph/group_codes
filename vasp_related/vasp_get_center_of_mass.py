@@ -1,0 +1,20 @@
+#! /usr/bin/env python
+
+import ase.io
+import argparse
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+            description='')
+    
+    parser.add_argument('-f', '--file', default='POSCAR')
+    parser.add_argument('-d', '--dipol', action='store_true', default=True)
+    
+    args = parser.parse_args()
+
+    atoms = ase.io.read(args.file, format='vasp')
+    com = atoms.get_center_of_mass(scaled=True)
+    if args.dipol:
+        print('DIPOL = %4.2f %4.2f %4.2f\n' % (com[0], com[1], com[2]))
+    else:
+        print('%4.2f %4.2f %4.2f\n' % (com[0], com[1], com[2]))

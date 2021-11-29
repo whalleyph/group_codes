@@ -1,0 +1,17 @@
+#! /usr/bin/env python
+
+import argparse
+import ase.io
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-c', '--cif', default='crystal.cif')
+
+    parser.add_argument('-o', '--poscar', default='POSCAR')
+
+    args = parser.parse_args()
+
+    atoms = ase.io.read(args.cif, format='cif')
+    
+    ase.io.write(args.poscar, atoms, format='vasp', direct=True, vasp5=True)

@@ -1,0 +1,84 @@
+#! /usr/bin/env python
+
+import ase
+from ase.lattice.surface import *
+from ase.io import vasp
+from ase.calculators.vasp import Vasp
+import os, shutil
+import numpy as np
+
+# Bulk lattice parameters
+a = 5.4524953358405277/2.
+c = 8.6008007405135629/2.
+
+# Atomic radii of the element of the hcp surface and the adsorbate
+r_hcp = 1.3
+r_ads = 0.7
+
+# Set up the surface with a 3x3x6 Ru layers and vacuum of 15 Ang.
+hcp0001 = hcp0001('Ru', size=(2,2,6), a=a, c=c, vacuum=7.5)
+
+# Read the relaxed structure of the adsorbate
+adsorbate = ase.io.read('molecule.xyz')
+# Find the center of the ring
+ring_center = tuple(adsorbate.get_center_of_mass())
+# Create a dummy atom 'X' at 0 and append the adsorbate to it
+adsorbate = ase.Atoms('X', positions=[ring_center]) + adsorbate
+
+## Fix the orientation of the adsorbate
+#pos = adsorbate.get_positions()
+#OO = pos[1] - pos[0]
+#adsorbate.rotate(OO, 'z')
+
+# Add the adsorbate on the surface and constrain layers if required
+sites = ['ontop', 'hcp', 'fcc', 'bridge']
+height = r_hcp + r_ads
+surface_adsorbate = {}
+for site in sites:
+    # ase.lattice.surface.add_adsorbate(slab, adsorbate, height, position=(0, 0), offset=None, mol_index=0)
+    hcp0001_adsorbate = hcp0001.copy()
+    ase.lattice.surface.add_adsorbate(hcp0001_adsorbate, adsorbate, height, position=site, mol_index=0)
+
+    # Remove the dummy atom
+    del hcp0001_adsorbate[[atom.index for atom in hcp0001_adsorbate if atom.symbol=='X']]
+    
+    print hcp0001_adsorbate
+
+    # Constrain Ru atoms not to relax
+    fixed_bottom = ase.constraints.FixAtoms(mask=[a.symbol == 'Ru' for a in hcp0001_adsorbate])
+    hcp0001_adsorbate.set_constraint(fixed_bottom)
+
+    # Add to dictionary
+    surface_adsorbate[site] = hcp0001_adsorbate
+
+# print surface_adsorbate
+# Setup the calculations
+for site in sites:
+    atoms = surface_adsorbate[site]
+    dir = site
+    if not os.path.exists(dir):
+        os.mkdir(dir)
+        os.chdir(dir)
+        calc = ase.calculators.vasp.Vasp(
+                encut = 400,
+                enaug = 645,
+                ismear = 1,
+                sigma = 0.05,
+                lreal = 'Auto',
+                prec = 'Normal',
+                potim = 0.1,
+                ispin = 2,
+                ibrion = 2,
+                nsw = 40,
+                ediff = 1e-5,
+                xc = 'PBE',
+                kpts = (1,1,1),
+                gamma = True)
+        calc.initialize(atoms)
+        vasp.write_vasp('POSCAR', calc.atoms_sorted, symbol_count=calc.symbol_count, direct=False)
+        calc.write_incar(atoms)
+        shutil.copy('../KPOINTS', 'KPOINTS')
+        calc.write_potcar()
+        os.chdir('..')
+    else:
+        print '%s exists. Skipping...' % (dir)

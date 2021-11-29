@@ -1,0 +1,10 @@
+#/usr/bin/python
+
+from re import search
+inpf=open("OUTCAR","r")
+
+entropies=[]
+for ln in inpf.readlines():
+	if search('entropy T*S    EENTRO =',ln):
+		tmp
+		entropies.append(float(ln.split()[-1]))

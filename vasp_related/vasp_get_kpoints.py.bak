@@ -1,0 +1,36 @@
+#! /usr/bin/env python
+
+import ase.io
+import argparse
+import numpy as np
+
+def get_reciprocal_vectors(cell):
+    a1, a2, a3 = cell
+    a1_cross_a2 = np.cross(a1, a2)
+    a2_cross_a3 = np.cross(a2, a3)
+    a3_cross_a1 = np.cross(a3, a1)
+
+    pi2 = 2*np.pi
+
+    b1 = pi2*a2_cross_a3/(np.dot(a1, a2_cross_a3))
+    b2 = pi2*a3_cross_a1/(np.dot(a2, a3_cross_a1))
+    b3 = pi2*a1_cross_a2/(np.dot(a3, a1_cross_a2))
+
+    return (b1, b2, b3)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+            description="""script to give the KPOINTS for a given POSCAR using the condition as VASP""")
+    
+    parser.add_argument('-f', '--poscar', default='POSCAR')
+    parser.add_argument('-s', '--kspacing', type=float, default=0.125)
+    
+    
+    args = parser.parse_args()
+
+    cell = ase.io.read(args.poscar).get_cell()
+
+    reciprocal_vectors = get_reciprocal_vectors(cell)
+    for i in reciprocal_vectors:
+        l = np.linalg.norm(i)
+        print int(np.ceil(np.max([1, l/args.kspacing]))),

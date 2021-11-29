@@ -1,0 +1,76 @@
+#! /usr/bin/env python
+
+import ase
+from ase.lattice.surface import *
+from ase.io import vasp
+from ase.calculators.vasp import Vasp
+import os
+import numpy as np
+
+
+# Bulk lattice parameters
+a = 5.4524953358405277/2.
+c = 8.6008007405135629/2.
+
+# Set up the surface with a 3x3x6 Ru layers and vacuum of 15 Ang.
+#ru_0001 = hcp0001('Ru', size=(3,3,6), a=a, c=c, vacuum=7.5)
+
+# Use an already relaxed POSCAR
+ru_surface = ase.io.read('POSCAR.surface')
+ru_surface.set_pbc([1,1,0])
+print ru_surface
+
+# O3 relaxed structure obtained from VASP
+O3 = ase.Atoms('O3', positions=[(0,0,0), (0, 0, 1.2856), (1.133188, 0.0, 1.892767)])
+
+# Translate O3 to the top of the surface by about 2 vdw radii of oxygen
+# - Find the top of the surface
+zmax = np.max(ru_surface.get_positions()[:,2])
+
+# - Translate to the center of the top surface
+tx = np.average(ru_surface.get_positions()[:,0])
+ty = np.average(ru_surface.get_positions()[:,1])
+tz = zmax + 2*ase.data.vdw.vdw_radii[8]
+O3.translate([tx, ty, tz])
+
+# Combine the two
+O3_on_Ru0001 = ru_surface + O3
+
+# Constrain Ru atoms not to relax
+fixed_Ru = ase.constraints.FixAtoms(mask=[a.symbol == 'Ru' for a in O3_on_Ru0001])
+O3_on_Ru0001.set_constraint(fixed_Ru)
+
+# Increase the vaccum by 3 vdw radii of oxygen
+newcell = O3_on_Ru0001.cell
+newcell[2,2] = newcell[2,2]+2*ase.data.vdw.vdw_radii[8]
+O3_on_Ru0001.set_cell(newcell)
+print O3_on_Ru0001
+
+
+ase.io.write('POSCAR', O3_on_Ru0001)
+
+#for i, j in zip(nlayers,nbands):
+#    ru_0001 = hcp0001('Ru', size=(1,1,i), a=a, c=c, vacuum=7.5)
+#    # print ru_0001
+#    dir = "%2.2i" % i
+#    os.mkdir(dir)
+#    calc = Vasp(xc = 'PBE', 
+#                kpts = (24, 24, 1),
+#                gamma = True,
+#                prec = 'Accurate',
+#                ibrion = 2,
+#                ismear = 1,
+#                sigma = 0.1,
+#                lreal = 'Auto',
+#                encut = 400,
+#                isif = 2,
+#                nbands = j+4,
+#                nsw = 40)
+#    os.chdir(dir)
+#    calc.initialize(ru_0001)
+#    vasp.write_vasp('POSCAR', calc.atoms_sorted, symbol_count = calc.symbol_count, direct=True)
+#    calc.write_incar(ru_0001)
+#    calc.write_kpoints()
+#    calc.write_potcar()
+#    open('ready', 'w')
+#    os.chdir('..')

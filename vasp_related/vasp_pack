@@ -1,0 +1,7 @@
+#! /bin/bash
+
+target_dir=$1
+tgz_name=`echo $target_dir | tr \/ _`
+tgz_name="$tgz_name".tgz
+
+tar -czvf $tgz_name $target_dir/{INCAR,POTCAR,KPOINTS,POSCAR,CONTCAR}

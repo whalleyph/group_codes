@@ -1,0 +1,16 @@
+#! /usr/bin/env python
+
+import ase.io
+import argparse
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-p', '--poscar', default='POSCAR')
+
+    args = parser.parse_args()
+
+    fposcar = args.poscar
+
+    atoms = ase.io.read(fposcar, format='vasp')
+
+    ase.io.write(fposcar + '.direct', atoms, format='vasp', vasp5=True, direct=True)

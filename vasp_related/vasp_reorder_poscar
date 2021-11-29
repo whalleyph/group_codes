@@ -1,0 +1,43 @@
+#! /bin/bash
+
+ase-file-converter-bk.py -i POSCAR -ot vasp -ow -r 1 1 1; mv POSCAR.vasp POSCAR
+vasp_make_potcar -xc potpaw_PBE.54
+
+exit
+
+#Old script
+
+cp POSCAR POSCAR.bkp
+vasp_pos2xyz.py
+vasp_reorder_xyz.py POSCAR.xyz
+vasp_xyz2poscar sorted.xyz
+x="`wc -l sorted.xyz |  awk '{print $1}' `"
+x=$((x-2))
+
+head -n 2 POSCAR.new > POSCAR
+head POSCAR.bkp -n 5 | tail -n 3 >> POSCAR
+grep -e "cart*" POSCAR.new -B 1 -i | head -n 1 >> POSCAR || grep -e "dir*" POSCAR.new -B 1  -i | head -n 1 >> POSCAR
+
+grep -e "cart*" POSCAR.new -A "$x" -i >> POSCAR || grep -e "dir*" POSCAR.new -A "$x"  -i >> POSCAR
+
+rm sorted.xyz POSCAR.xyz POSCAR.new
+
+vasp_make_potcar -xc potpaw_PBE.54
+
+#if ("`grep -e 'cart*' -i POSCAR.bkp`" != "") then
+#key="cart*"
+#else if ("`grep -e 'dir*' -i POSCAR.bkp`" != "") then
+#key="dir*"
+#fi
+#echo $key
+#grep -e '"$key"' POSCAR.bkp -B 10 -i > POSCAR 
+#grep -e '"$key"' POSCAR.new -C "$x" -i > POSCAR 
+
+#grep -e "dir*" POSCAR.bkp -B 10 -i > x || grep -e "cart*" POSCAR.bkp -B 10 -i > x
+#y="`wc -l x |  awk '{print $1}' `"
+#y=$((y-1))
+#head -n "$y" POSCAR > xx
+#mv xx POSCAR
+#vasp_pos2pos -i POSCAR.new -x2d -o POSCAR
+
+

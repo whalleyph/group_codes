@@ -1,0 +1,16 @@
+#! /bin/csh
+
+set dir1 = "$1"
+set dir2 = "$2"
+
+if ( $dir2 == "" ) then
+echo 'Proper use: script sourceDir targetDir'
+exit
+endif
+
+mkdir -p $dir2
+cp -i $dir1/INCAR $dir1/KPOINTS $dir1/POTCAR $dir2/
+cp -i $dir1/submit_vasp $dir2/ || cp -i $dir1/sub $dir2/  
+cp -i $dir1/CENTCAR $dir2/POSCAR || cp -i $dir1/CONTCAR $dir2/POSCAR || cp -i $dir1/POSCAR $dir2/POSCAR
+#cp -i $dir1/CONTCAR $dir2/POSCAR || cp -i $dir1/POSCAR $dir2/POSCAR
+cp -f $dir1/vdw_kernel.bindat $dir2/

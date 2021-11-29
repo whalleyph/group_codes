@@ -1,0 +1,106 @@
+#! /usr/bin/env python
+
+import os
+from glob import glob
+import ase.io
+import outcar as out
+import argparse
+
+def get_extended_comment_line(latvec):
+    s = ''
+    for vec in latvec.flatten():
+        s += '%10.6f ' % (vec)
+
+    s = 'Lattice="%s" Properties=species:S:1:pos:R:3\n' % (s.strip())
+
+    return s
+
+def config2xyz(symbols, latvec, config):
+    s = ''
+    s += "%i\n" % (len(config))
+    s += get_extended_comment_line(latvec)
+    for isym, ipos in zip(symbols, config):
+        s += "%2s %.4f %.4f %.4f\n" % (isym, ipos[0], ipos[1], ipos[2])
+
+    return s
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+            description="""Script to extract congfigurations in an OUTCAR file
+and write them in extended XYZ format. Can write the XYZ as a
+single file or as multiple files---one file for each configuration.
+Can also write the split files in VASP format. Can also replicate
+cell, making it easier to visualize using VMD without loss of bonds
+across PBC""")
+
+    parser.add_argument('-f', '--file', default='OUTCAR',help ='Input file (def: OUTCAR)')
+    parser.add_argument('-o', '--ofile', default='OUTCAR.xyz',help ='Output file (def: OUTCAR.xyz)' )
+    parser.add_argument('-r', '--replicate', nargs=3, type=int)
+    parser.add_argument('-s', '--split', action='store_true', default=False,
+            help='split all configurations to separate files')
+    parser.add_argument('-d', '--split-dir', default='extracted_configs',
+            help='directory where the split configurations should be written')
+    parser.add_argument('-v', '--to-vasp', action='store_true', default=True,
+            help='write POSCAR format instead of XYZ format')
+    parser.add_argument('-skip', '--skip', type=int, default=False,
+            help='or skipping frames in the trajectory. Only every nth frame is written to output. Def: No frame is skipped.')
+
+    args = parser.parse_args()
+    
+    if args.skip: skip=args.skip
+    else: skip=1
+                       
+    foutcar = args.file
+    outf = args.ofile
+
+    oout = out.outcar().read(foutcar)
+    lattice_vectors = oout.get_latvec()
+    configurations = oout.get_positions()
+    symbols = ase.io.read('POSCAR', format='vasp').get_chemical_symbols()
+
+    # if replicate, replicate supercell
+    replicated_configurations = []
+    if args.replicate:
+        for iconfig, ilatvec in zip(configurations, lattice_vectors):
+            atoms = ase.Atoms(symbols, positions=iconfig, cell=ilatvec,
+                    pbc=(1,1,1))
+            replicated_configurations.append(atoms*args.replicate)
+
+        # we just want the xyz coordinates below
+        symbols = replicated_configurations[0].get_chemical_symbols()
+        lattice_vectors = []
+        configurations = []
+        for iconfig in replicated_configurations:
+            lattice_vectors.append(iconfig.get_cell())
+            configurations.append(iconfig.get_positions())
+
+    print len(lattice_vectors), len(configurations)
+
+    # write each configuration to the xyz file
+    if not args.split:
+        f = open(outf, 'w')
+        cnt=0
+        for ilatvec, iconfig in zip(lattice_vectors, configurations):
+            cnt+=1
+            if cnt%skip==0:
+                f.write(config2xyz(symbols, ilatvec, iconfig))
+
+    elif args.split:
+        os.makedirs(args.split_dir)
+        for i, ilatvec, iconfig in zip(range(len(configurations)), lattice_vectors, configurations):
+            cnt+=1
+            if cnt%skip != 0: continue
+            fname = 'config_%5.5i.xyz' % (i)
+            fname = os.path.join(args.split_dir, fname)
+            f = open(fname, 'w')
+            f.write(config2xyz(symbols, ilatvec, iconfig))
+            f.close()
+
+    if args.to_vasp:
+        f_xyz_configs = glob(os.path.join(args.split_dir, 'config_*.xyz'))
+
+        def write_vasp_format(fextxyz):
+            atoms = ase.io.read(fextxyz, format='extxyz')
+            ase.io.write(fextxyz.replace('.xyz', '.POSCAR'), atoms, format='vasp', vasp5=True)
+
+        map(write_vasp_format, f_xyz_configs)

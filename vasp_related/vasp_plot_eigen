@@ -1,0 +1,18 @@
+#! /usr/bin/env python
+
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_eigen(values):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    width = np.ones(len(values))
+    ax.barh(values, width, height=0.01)
+    ax.axis([-0.5, 1.5, min(values)-1, max(values)+1])
+    return ax
+
+if __name__ == '__main__':
+    kpts, eigenvalues = np.loadtxt(sys.argv[1], unpack=True)
+    ax = plot_eigen(eigenvalues)
+    plt.show()

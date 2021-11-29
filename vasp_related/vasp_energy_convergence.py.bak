@@ -1,0 +1,64 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+import numpy as np
+from os import popen,system
+from re import search
+
+try: 
+  from oszicar import oszicar
+  try: osz = oszicar().read('vasp.out')
+  except: osz = oszicar().read('OSZICAR')
+  total_energies = osz.get_energies()
+  lines=osz.lines
+  #print lines
+except: 
+  inp1 = open("vasp.out",'r')
+  lines=inp1.read()
+  lines=lines.split("\n")
+  total_energies = []
+  te = popen("grep ' free  energy   TOTEN' OUTCAR |  awk   '{print $5}' ").read()
+  te=te.split("\n")
+  te.pop(-1)
+  for i in te:
+    total_energies.append(float(i))
+
+#total_energies = popen("grep ' free  energy   TOTEN' OUTCAR |  awk   '{print $5}' ").readlines()
+#total_energies.pop(-1)
+#total_energies=int(total_energies)
+#print total_energies
+#print dir(osz)
+
+#grads=popen('grep "g(F)" vasp.out').readlines()
+grads=[]
+#for i in range(len(osz.lines)-2): 
+for i in range(len(lines)-2):
+  #ln = osz.lines[i]
+  ln=lines[i][0:-1]
+  if search("F=",ln):
+    if search("g\(F\)=",lines[i+2]):  grads.append([ln.split()[0],lines[i+2]])
+    elif search("BRION\:",lines[i+1]): grads.append([ln.split()[0],lines[i+1]]) 
+    else:grads.append([ln.split()[0],grads[-1][1]])
+
+#print len(grads)
+i = 0
+while True:
+    try:
+        #tot_ediff = total_energies[int(2**i)] - total_energies[0]#- total_energies[int(2**(i-1))]
+        #prev_ediff = total_energies[int(2**i)] - total_energies[int(2**(i-1))]
+        #print '%6i %10.4f %10.4f' % (int(2**i), tot_ediff, prev_ediff)
+
+        tot_ediff = total_energies[int(10*i)] - total_energies[0]#- total_energies[int(2**(i-1))]
+        prev_ediff = total_energies[int(10*i)] - total_energies[int(10*(i-1))]
+        #if i==0: print '%6i %10.4f' % (int(10*i), tot_ediff)
+        if i!=0: print '%6i %10.4f %10.4f    %s' % (int(10*i), tot_ediff, prev_ediff,grads[10*i][1])
+
+        i += 1
+    except IndexError:
+        break
+print '%6i %10.4f %13.6f %s' % (len(total_energies), total_energies[-1] - total_energies[0],total_energies[-1],grads[-1][1])
+#system("grep 'reached required accuracy' vasp.out")
+system("grep 'reached required accuracy' OSZICAR")
+print
+system("vasp_get_energies . ")
+

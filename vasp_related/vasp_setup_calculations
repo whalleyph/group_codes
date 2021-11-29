@@ -1,0 +1,119 @@
+#! /usr/bin/env python
+
+import os
+from glob import glob
+import shutil
+#import yaml
+import subprocess as sp
+import argparse
+from make_potcar import get_potcar
+
+
+def copy_files(files, src_dir, dst_dir):
+    for f in files:
+        src = os.path.join(src_dir, f)
+        dst = os.path.join(dst_dir, f)
+        shutil.copy(src, dst)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument('-c', '--common_files', nargs='*')
+    parser.add_argument('-s', '--specific_files', nargs='*')
+    parser.add_argument('-p', '--make_potcar', action='store_true', default=False)
+    parser.add_argument('-xc', '--xc', choices=['pbe', 'pbe_new'], default='pbe')
+    
+    args = parser.parse_args()
+
+    specific_files = args.specific_files
+    common_files = args.common_files
+
+    print specific_files
+    print common_files
+
+    pwd = os.getcwd()
+    fposcars = glob('POSCAR.*.vasp')
+
+    # figure out all the directories to create
+    dirs = []
+    for f in specific_files:
+        d = f.split('.')[1]
+        if d not in dirs: dirs.append(d)
+    print dirs
+
+    # make a list of files to be copied to each directory
+    file_list = {}
+    for d in dirs:
+        file_list[d] = []
+        file_list[d].extend(common_files)
+        sp_files = [f for f in specific_files if d in f]
+        file_list[d].extend(sp_files)
+    print file_list
+
+    # create the directories if they do not exist and copy the files
+    for dst_dir in file_list.keys():
+        # create the directory
+        if not os.path.exists(dst_dir):
+            os.makedirs(dst_dir)
+            # copy the files
+            for src_file in file_list[dst_dir]:
+                if not src_file in common_files:
+                    dst = os.path.join(dst_dir, src_file.split('.')[0])
+                else:
+                    dst = os.path.join(dst_dir, src_file)
+                shutil.copy(src_file, dst)
+
+            # make potcars if required
+            if args.make_potcar:
+                iposcar = os.path.join(dst_dir, 'POSCAR')
+                elements = open(iposcar).readlines()[0].strip().split()
+                xc = args.xc
+                pp = get_potcar(elements, xc)
+                dst_potcar = os.path.join(dst_dir, 'POTCAR')
+                open(dst_potcar, 'w').write(pp)
+        else:
+            print '%s exists: Skipping' % (dst_dir)
+
+
+    #for iposcar in fposcars:
+    #    dst_dir = iposcar.replace('POSCAR.', '').replace('.vasp', '')
+    #    dst_dir = dst_dir.replace('|', os.path.sep)
+    #    if not os.path.exists(dst_dir):
+    #        os.makedirs(dst_dir)
+    #    else:
+    #        print '%s exists: Skipping' % (dst_dir)
+    #        continue
+    #    src_dir = pwd
+    #    copy_files(args.copy_files, src_dir, dst_dir)
+    #    shutil.copy(iposcar, os.path.join(dst_dir, 'POSCAR'))
+    #    if args.make_potcar:
+    #        elements = open(iposcar).readlines()[0].strip().split()
+    #        xc = args.xc
+    #        pp = get_potcar(elements, xc)
+    #        dst_potcar = os.path.join(dst_dir, 'POTCAR')
+    #        open(dst_potcar, 'w').write(pp)
+            
+
+##dirs = [i.split('.')[1] for i in fposcars]
+#
+#    #dirname = iposcar.split('.')[1]
+#    if not os.path.exists(dirname):
+#        shutil.copy(iposcar, os.path.join(dirname, 'POSCAR'))
+#        shutil.copy('INCAR', os.path.join(dirname, 'INCAR'))
+#        shutil.copy('KPOINTS', os.path.join(dirname, 'KPOINTS'))
+#        shutil.copy('POTCAR', os.path.join(dirname, 'POTCAR'))
+#        os.chdir(dirname)
+#        open('ready', 'w')
+#        #os.system('head -n 1 POSCAR | xargs vasp_makepotcar pbe ')
+#        os.chdir(pwd)
+#        #shutil.copy('steps.yaml', os.path.join(dirname, 'steps.yaml'))
+#        shutil.copy('sub', os.path.join(dirname, 'sub'))
+#        if os.path.exists('jobparams.yaml'):
+#            jobparams = yaml.load(open('jobparams.yaml'))
+#            jobparams['directory'] = os.path.join(jobparams['directory'], dirname)
+#            yaml.dump(jobparams, open(os.path.join(dirname, 'jobparams.yaml'), 'w'))
+#            open(os.path.join(dirname, 'send'), 'w')
+#        else:
+#            # print 'jobparams.yaml does not exist. Not copying jobparams.yaml and \
+##into the directories'
+            #pass

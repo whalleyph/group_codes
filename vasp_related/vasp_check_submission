@@ -1,0 +1,119 @@
+#! /usr/bin/env python
+
+import argparse
+import incar
+import sys
+
+def dynmat_normal(t, s):
+    # Check tags from INCAR
+    assert t['nwrite'] == '3'
+    assert t['nfree'] in ['2', '4']
+    assert float(t['ediff']) <= 1e-7
+    assert float(t['potim']) <= 0.015
+    assert t['prec'][0:4].lower() == 'accu'
+    assert t['ibrion'] in ['5', '6', '7', '8']
+    assert t['lwave'].lower() in ['.f.', '.false.']
+    assert t['lchgcar'].lower() in ['.f.', '.false.']
+    assert 'npar' not in t.keys()
+
+    # Check executable in sub
+    sub_string = open('sub').read()
+    assert sub_string.find(' vasp ') > 0
+    pass
+
+def dynmat_accurate(t, s):
+    # Check tags from INCAR
+    assert t['nwrite'] == '3'
+    assert t['nfree'] in ['2', '4']
+    assert float(t['ediff']) <= 1e-7
+    assert float(t['potim']) <= 0.015
+    assert t['prec'][0:4].lower() == 'accu'
+    assert t['ibrion'] in ['5', '6', '7', '8']
+    assert t['lwave'].lower() in ['.f.', '.false.']
+    assert t['lchgcar'].lower() in ['.f.', '.false.']
+    assert 'npar' not in t.keys()
+
+    # Check executable in sub
+    sub_string = open('sub').read()
+    assert sub_string.find(' vasp ') > 0
+    pass
+
+def neb_normal(t, s):
+    # Check tags from INCAR
+    assert 'images' in t.keys()
+    assert float(t['ediff']) <= 1e-4
+    assert float(t['potim']) <= 0.15
+    assert t['prec'][0:4].lower() == 'norm'
+    assert t['ibrion'] in ['1', '2']
+    assert t['lwave'].lower() in ['.f.', '.false.']
+    assert t['lchgcar'].lower() in ['.f.', '.false.']
+    assert 'npar' in t.keys()
+
+    # Check executable in sub
+    sub_string = open('sub').read()
+    assert sub_string.find(' vasp.neb') > 0
+    pass
+
+def neb_accurate(t, s):
+    # Check tags from INCAR
+    assert 'images' in t.keys()
+    assert float(t['ediff']) <= 1e-5
+    assert float(t['potim']) <= 0.1
+    assert t['prec'][0:4].lower() == 'norm'
+    assert t['ibrion'] in ['1', '2']
+    assert t['lwave'].lower() in ['.f.', '.false.']
+    assert t['lchgcar'].lower() in ['.f.', '.false.']
+    assert 'npar' in t.keys()
+
+    # Check executable in sub
+    sub_string = open('sub').read()
+    assert sub_string.find(' vasp.neb') > 0
+    pass
+
+def dos(t, s):
+    assert t['ibrion'] == '-1'
+    assert t['nsw'] == '0'
+    assert 'npar' in t.keys()
+
+def cubic_relaxation(t, sub):
+    pass
+
+if __name__ == '__main__':
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-t', '--type', required=True,
+            help="""choose from neb, dynmat, cubic_relaxation""")
+    parser.add_argument('-f', '--file', default='INCAR',
+            help="INCAR file")
+    parser.add_argument('-s', '--submit-file', default='sub',
+            help="PBS submit file")
+    args = parser.parse_args()
+
+    f = args.file   # incar filename
+    tags = incar.incar().read(f).tags     # all the tags from incar
+
+    # covert all keys to lower case
+    keys, values = zip(*tags.items())
+    keys = [key.lower() for key in keys]
+    tags = dict(zip(keys, values))
+
+    ct = args.type          # calculation type
+    sub = args.submit_file  # PBS submit file
+
+    if ct == 'dynmat_normal':
+        dynmat_normal(tags, sub)
+    elif ct == 'dynmat_accurate':
+        dynmat_accurate(tags, sub)
+    elif ct == 'neb_normal':
+        neb_normal(tags, sub)
+    elif ct == 'neb_accurate':
+        neb_accurate(tags, sub)
+    elif ct == 'cubic_relaxation':
+        cubic_relaxation(tags, sub)
+    elif ct == 'dos':
+        dos(tags, sub)
+    else:
+        print 'Calculation "type" does not match any of the types defined'
+        print ''
+        print 'Submission not checked... Try again'
+        sys.exit(-1)

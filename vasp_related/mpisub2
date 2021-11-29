@@ -1,0 +1,11 @@
+#! /bin/bash
+
+#PBS -l nodes=1:ppn=2
+
+NP=`wc -l $PBS_NODEFILE | gawk '{print $1}'`
+
+cd $PBS_O_WORKDIR
+
+ulimit -s unlimited
+cat $PBS_NODEFILE > running_on_nodes
+mpirun -np $NP ~/bin/vasp.mkl.o2 > vasp.out

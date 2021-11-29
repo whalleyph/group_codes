@@ -1,0 +1,17 @@
+#! /bin/bash
+
+if [ "$*" ]; then
+    files=$*
+else
+    files=OUTCAR
+fi
+
+echo $files
+> cpu.tmp
+for f in $files; do
+    #grep F= $f | awk '{if ($17 <0) {print -$17} else {print $17}}' >> mag.tmp
+    grep "LOOP+" $f | awk '{print $7}' >> cpu.tmp
+    echo >> cpu.tmp
+done
+xmgrace cpu.tmp&
+#rm mag.tmp

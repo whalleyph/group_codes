@@ -1,0 +1,48 @@
+import ase
+from ase.lattice.surface import *
+from ase.io import vasp
+from ase.calculators.vasp import Vasp
+import os
+
+a = 5.4524953358405277/2.
+c = 8.6008007405135629/2.
+
+n1,n2,n3 = 2,2,6
+# Create the surface
+ru_0001 = hcp0001('Ru', size=(n1,n2,n3), a=a, c=c, vacuum=7.5)
+
+# kpoints
+kpts = [(8,8,1),(10,10,1),(12,12,1),(14,14,1),(16,16,1),(18,18,1),(20,20,1),(22,22,1),(24,24,1)]
+
+for ikpts in kpts:
+    print ikpts
+    dir = '%2.2ix%2.2ix%2.2i' % ikpts
+    if not os.path.exists(dir):
+        calc = Vasp(xc = 'PBE', 
+                kpts = ikpts,
+                gamma = True,
+                prec = 'Accurate',
+                ibrion = 2,
+                ismear = 1,
+                sigma = 0.1,
+                lreal = 'Auto',
+                encut = 400,
+                isif = 2,
+                ediff = 1e-5,
+                ediffg = -0.01,
+                nsw = 40)
+
+        os.mkdir(dir)
+        os.chdir(dir)
+
+        # Write out the files
+        calc.initialize(ru_0001)
+        vasp.write_vasp('POSCAR', calc.atoms_sorted, symbol_count = calc.symbol_count, direct=True)
+        calc.write_incar(ru_0001)
+        calc.write_kpoints()
+        calc.write_potcar()
+        open('ready', 'w')
+
+        os.chdir('..')
+    else:
+        print '%s dir exists... Skipping' % (dir)

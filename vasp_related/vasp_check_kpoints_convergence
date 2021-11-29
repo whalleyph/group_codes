@@ -1,0 +1,34 @@
+#! /usr/bin/env python
+
+import os
+import argparse
+import incar
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-d', '--dirs', nargs='+', required=True, 
+                help='directories in which to submit')
+
+    args = parser.parse_args()
+
+    dirs = args.dirs
+    print dirs
+
+    for dir in dirs:
+        fincar = os.path.join(dir, 'INCAR')
+        inc = incar.incar().read(fincar)
+        tags = inc.tags
+        print '**** Looking at %s ****' % (fincar)
+        assert tags['NSW'] == '1'
+        assert tags['ISMEAR'] == '-5'
+        assert tags['PREC'].lower() == 'accurate'
+        assert tags['LREAL'].lower() == 'auto'
+        assert tags['LWAVE'].lower() == '.false.'
+        assert tags['LCHARG'].lower() == '.false.'
+
+        print '**** %s seems to be fine ****' % (fincar)
+        print '**** Just an echo of the INCAR ****'
+        print inc
+        print

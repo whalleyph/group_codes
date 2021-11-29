@@ -1,0 +1,3 @@
+#! /bin/bash
+
+grep F.*F.*F $1

@@ -1,0 +1,160 @@
+#! /usr/bin/env python
+
+import ase.io
+import ase
+import argparse
+import numpy as np
+import sys
+
+def get_speed_of_molecule(molecule, temperature):
+    # calculate the velocity of the molecule
+    temperature = args.temperature
+    gas_constant = 8.3144621 # kg m^2/s^2-K-mol
+    avogadro_number = 6.022e23
+    kB = gas_constant/avogadro_number
+    velocity = args.velocity
+    mol_mass = np.sum(molecule.get_masses()) * 1e-3 / avogadro_number # kg
+    if temperature:
+        print np.sum(molecule.get_masses())
+        avg_velocity = np.sqrt(8*kB*temperature/(np.pi*mol_mass))     # m/s
+        avg_velocity = avg_velocity*1e-5    # angstrom/fs
+    elif args.velocity:
+        avg_velocity = args.velocity
+    else:
+        print 'Either the temperature or the velocity should be supplied'
+        sys.exit(-1)
+    print '%.3e Angstrom / femtosecond' % (avg_velocity)
+    ke = 0.5*mol_mass*((avg_velocity*1e5)**2) # Joule
+    ke = ke*6.2415093e+18
+    print 'Kinetic energy: %.2f meV' % (ke*1e3)
+
+    return avg_velocity
+
+def get_random_ab(cell, ntimes, tol):
+    ab = []
+    ab.append(np.random.rand(2))
+    for i in range(1,ntimes):
+        not_accepted = True
+        while not_accepted:
+            # generate_random_coordinate
+            atmp, btmp = np.random.rand(2)
+            #xtmp, ytmp, dummy = np.dot(cell.transpose(), np.array([atmp, btmp, 0.0]))
+            tmp = np.dot(cell.transpose(), np.array([atmp, btmp, 0.0]))
+            xtmp, ytmp, dummy = tmp
+            print 'xtmp ytmp dummy', xtmp, ytmp, dummy
+            # compute distance with all previous coordinates
+            r_prev = []
+            for ir in ab:
+                r1x, r1y, r1z = np.dot(cell.transpose(), np.array([ir[0], ir[1], 0.0]))
+                r1 = np.array([r1x, r1y])
+                r2 = np.array([xtmp, ytmp])
+                print 'r2', r2
+                r12 = np.linalg.norm(r2-r1)
+                r_prev.append(r12)
+
+            within_tol = True
+            for ir in r_prev:
+                if ir < tol:
+                    within_tol = False
+                    break
+
+            if within_tol:
+                not_accepted = False
+                ab.append(np.array([atmp, btmp]))
+
+    return np.array(ab)
+
+
+def add_molecule_to_surface(surface, molecule, ntimes=1, random=False, ab=None, tol=2.0):
+    # add molecule to the surface
+    cell = surface.cell
+    zmax = np.max(surface.get_positions()[:,2])
+    mol_z = zmax + args.das
+    mol_c = mol_z/cell[2,2]
+    
+    if random:
+        ab = get_random_ab(cell, ntimes=ntimes, tol=tol)
+
+    print ab
+
+    new_surface = surface.copy()
+    for i in range(ntimes):
+        mol_a, mol_b = ab[i]
+        mol_pos = np.dot(cell.transpose(), np.array([mol_a, mol_b, mol_c]))
+        # translate molecule to new position
+        print mol_pos
+        molecule.translate(mol_pos - molecule.get_positions()[0])
+        new_molecule = ase.Atoms(molecule, cell=surface.cell)
+        print new_molecule
+        new_surface = new_surface.extend(new_molecule)
+
+    return new_surface
+
+def add_velocities(surface, molecule, temperature, input_file, tmp_output_file):
+    ns = len(surface)
+    nm = len(molecule)
+    input_lines = open(input_file).readlines()
+    for i, line in enumerate(input_lines):
+        if 'cart' in line.lower() or 'direct' in line.lower():
+            positions = input_lines[i+1:i+ns]
+            velocities = input_lines[i+ns+2:i+ns+2+ns]
+            print velocities
+
+    tmp_output_lines = open(tmp_output_file).readlines()
+    tmp_output_lines.append('\n')
+    speed = get_speed_of_molecule(molecule, temperature)
+    #speed = '-%.4e' % (speed)
+    vel = ' %15.8e %15.8e %15.8e\n' % (0.0, 0.0, -speed)
+    velocities.append(nm*vel)
+    #print velocities
+    tmp_output_lines.extend(velocities)
+    #print tmp_output_lines
+    new_output_file_string = ''.join(tmp_output_lines)
+    return new_output_file_string
+
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(
+            description='')
+
+    parser.add_argument('-i', '--input-file', default='POSCAR')
+    parser.add_argument('-o', '--output-file', default='POSCAR.surface+molecule.vasp')
+    parser.add_argument('-m', '--molecule', default='molecule.xyz')
+    parser.add_argument('-n', '--nmolecules', type=int, default=1,
+            help='Number of molecules to add')
+    parser.add_argument('-v', '--velocity', type=float, default=None,
+            help='in Ang/fs')
+    parser.add_argument('-t', '--temperature', type=float, default=None,
+            help='temperature in K')
+    parser.add_argument('-d', '--das', type=float, default=4.5,
+            help='distance above surface')
+    parser.add_argument('-ab', '--ab', nargs=2, type=float, default=None,
+            help='position where the molecule should be positioned in the ab plane \
+                  will be placed randomly if not specified')
+    parser.add_argument('-tol', '--tolerance', type=float, default=2.0,
+            help='minimum distance between each of the added molecules')
+
+    args = parser.parse_args()
+
+    surface = ase.io.read(args.input_file, format='vasp')
+    molecule = ase.io.read(args.molecule, format='xyz')
+    nmolecules = args.nmolecules
+    ab = args.ab
+    tol = args.tolerance
+
+    print get_speed_of_molecule(molecule, args.temperature)
+
+    if args.ab:
+        new_surface = add_molecule_to_surface(surface, molecule, ntimes=nmolecules, ab=ab, tol=tol)
+    else:
+        new_surface = add_molecule_to_surface(surface, molecule, ntimes=nmolecules, random=True, tol=tol)
+
+    ase.io.write('tmp_output', new_surface, format='vasp', vasp5=True, direct=False)
+
+    # now append velocities to this newly written file
+    #molecule_speed = get_speed_of_molecule(molecule, args.temperature)
+    new_output_file_string = add_velocities(surface, molecule, args.temperature, args.input_file, 'tmp_output')
+
+    open(args.output_file, 'w').write(new_output_file_string)

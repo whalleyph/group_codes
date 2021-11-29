@@ -1,0 +1,36 @@
+#! /usr/bin/env python
+
+import os
+from glob import glob
+import shutil
+import yaml
+import subprocess as sp
+
+pwd = os.getcwd()
+
+fposcars = glob('POSCAR.*.vasp')
+
+dirs = [i.split('.')[1] for i in fposcars]
+
+for iposcar in fposcars:
+    dirname = iposcar.split('.')[1]
+    if not os.path.exists(dirname):
+        os.mkdir(dirname)
+        shutil.copy(iposcar, os.path.join(dirname, 'POSCAR'))
+        shutil.copy('INCAR', os.path.join(dirname, 'INCAR'))
+        #shutil.copy('KPOINTS', os.path.join(dirname, 'KPOINTS'))
+        #shutil.copy('POTCAR', os.path.join(dirname, 'POTCAR'))
+        os.chdir(dirname)
+        sp.check_call('vasp_make_potcar -xc pbe_new', shell=True)
+        open('ready', 'w')
+        os.chdir(pwd)
+        shutil.copy('steps.yaml', os.path.join(dirname, 'steps.yaml'))
+        shutil.copy('sub', os.path.join(dirname, 'sub'))
+        #if os.path.exists('jobparams.yaml'):
+        #    jobparams = yaml.load(open('jobparams.yaml'))
+        #    jobparams['directory'] = os.path.join(jobparams['directory'], dirname)
+        #    yaml.dump(jobparams, open(os.path.join(dirname, 'jobparams.yaml'), 'w'))
+        #    open(os.path.join(dirname, 'send'), 'w')
+        #else:
+        #    print 'jobparams.yaml does not exist. Not copying jobparams.yaml and \
+#into the directories'

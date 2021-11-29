@@ -1,0 +1,50 @@
+#!/usr/bin/env python
+
+import sys
+from math import *
+import numpy
+from numpy import *
+from numpy import dot
+import csv
+import re
+from matplotlib import *
+use('Agg')
+from pylab import plot, show, ylim, xlim, yticks, xlabel, ylabel
+import matplotlib.path as mpath
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
+import matplotlib
+import eigenval_reader as er
+
+if (__name__ == '__main__'):
+    filename = 'EIGENVAL'
+    if len(sys.argv) == 2:
+        filename = sys.argv[1]
+    else:
+        print("Defaulting filename to 'EIGENVAL', if you wish to specify another filename on the command prompt do it like this: plot_eigenval.py myfilename")
+
+    parser = er.EigenvalParser()
+    kpoints = parser.parse(filename)
+
+    rcParams['lines.linewidth'] = 4.0
+    rcParams['font.weight'] = "heavy"
+    rcParams['axes.linewidth'] = 4.0
+    rcParams['xtick.major.size'] = 0.0
+    rcParams['xtick.minor.size'] = 0.0
+    rcParams['ytick.major.size'] = 0.0
+    rcParams['ytick.minor.size'] = 0.0  
+
+    #efermi = 6.4081
+    efermi = 0
+
+    for band in er.get_bands(kpoints):
+        plot(range(0,len(band)), array(band)-efermi, 'k')
+
+    xlim(0,119)
+    ylim(-25,2)
+    plt.title("Band Structure")
+    xlabel("K-Points")
+    ylabel("Energy(eV)")
+    plt.show()
+    plt.savefig('bandstructure.png')

@@ -1,0 +1,5 @@
+#! /bin/bash
+
+find . -name WAVECAR -exec rm '{}' \;
+find . -name CHGCAR -exec rm '{}' \;
+find . -name CHG -exec rm '{}' \;

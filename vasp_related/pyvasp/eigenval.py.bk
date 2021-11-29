@@ -1,0 +1,25 @@
+from cStringIO import StringIO as sio
+import numpy as np
+import os, sys
+
+class eigenval:
+    def __init__(self, f='EIGENVAL'):
+        if isinstance(f, str):
+            self.file = open(f)
+            self.lines = self.file.readlines()
+        elif isinstance(f, file):
+            self.file = f
+            self.lines = f.readlines()
+
+    def parse(self):
+        dummy, nkpoints, nbands = self.lines[5].split()
+
+        self.kpoints = {}
+        for i in range(nkpoints):
+            datablock = self.lines[i*nbands+6:2+
+        for i in self.lines[6:]:
+            skip = self.line[i]
+            x, y, z, w = [float(i) for i in self.line[i+1].split()]
+
+
+        return self

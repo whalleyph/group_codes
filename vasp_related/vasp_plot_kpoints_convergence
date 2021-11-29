@@ -1,0 +1,59 @@
+#! /usr/bin/env python
+
+import os
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import oszicar
+from glob import glob
+
+dirs = sorted(glob('??x??x*'))
+
+# Collect the energies
+annotations = []
+eng = []
+for dir in dirs:
+    foszicar = os.path.join(dir, 'OSZICAR')
+    if os.path.exists(foszicar):
+        osz = oszicar.oszicar().read(foszicar)
+        ieng = None
+        try:
+            ieng = osz.e0()[-1]
+        except IndexError:
+            pass
+        if ieng:
+            eng.append(ieng)
+            annotations.append(dir)
+            print "%s %.3f" % (dir, ieng)
+        else:
+            print '%s does not have an energy (yet)' % (foszicar)
+    else:
+        print '%s does not exist (yet)' % (foszicar)
+
+# Write all collected energies to file
+f = open('kpoint_convergence.dat', 'w')
+for i, j in zip(annotations, eng):
+    s = "%s %.3f\n" % (i, j) 
+    f.write(s)
+f.close()
+
+# Make a plot with all the directories
+fig = plt.figure()
+fig.subplots_adjust(bottom=0.2)
+ax = fig.add_subplot(121)
+x = range(len(eng))
+ax.plot(x, eng)
+ax.set_xticks(x)
+ax.set_xticklabels(annotations, rotation='vertical')
+
+# Make a second plot
+ax = fig.add_subplot(122)
+x = x[-5:]
+eng = eng[-5:]
+ax.plot(x, eng)
+annotations = annotations[-5:]
+ax.set_xticks(x)
+ax.set_xticklabels(annotations, rotation='vertical')
+
+plt.show()
+plt.savefig('kpoint_convergence.png')

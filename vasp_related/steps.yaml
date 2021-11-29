@@ -1,0 +1,46 @@
+- name: rlx_normal
+  start_from: .
+  start_in: rlx_normal
+  incar: |
+    ENCUT = 400.000000
+    ENAUG = 645.000000
+    SIGMA = 0.050000
+    POTIM = 0.100000
+    EDIFF = 1.00e-04
+    PREC = Normal
+    ISPIN = 1
+    ISMEAR = 1
+    NSW = 40
+    IBRION = 2
+    LREAL = Auto
+    NPAR = 2
+  kpoints: |
+    8x8x1
+    0
+    Gamma
+    8 8 1
+    0 0 0
+  exe: vasp
+  test: convergence
+
+- name: rlx_accurate
+  start_from: .
+  start_in: rlx_accurate
+  dincar: |
+    - ISPIN
+    > PREC = Accurate
+    > EDIFF = 1E-5
+  dkpoints: 12 12 1
+  exe: vasp
+  test: convergence
+
+- name: dos
+  start_from: .
+  start_in: dos
+  dincar: |
+    > PREC = Accurate
+    > ISMEAR = -5
+    + LORBIT = 11
+  dkpoints: 16 16 1
+  exe: vasp
+  test: completion

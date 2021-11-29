@@ -1,0 +1,35 @@
+#! /usr/bin/env python
+
+# Read the kpoints listed in setup_kpoints_convergence.in
+# Make directories n1xn2xn3 as listed in setup_kpoints_convergence.in
+# copy the files INCAR POSCAR POTCAR KPOINTS
+# change the lastbut one line in KPOINTS to n1xn2xn3
+# touch ready in the directory
+
+import os
+from shutil import copy
+import kpoints as kp
+
+if __name__ == '__main__':
+
+    files_to_be_copied = 'INCAR POSCAR POTCAR KPOINTS'.split()
+
+    f = open('setup_kpoints_convergence.in')
+    lines = f.readlines()
+    for line in lines:
+        n1, n2, n3 = [int(i) for i in line.strip().split()]
+        dir = '%2.2ix%2.2ix%2.2i' % (n1, n2, n3)
+        if not os.path.exists(dir):
+            os.mkdir(dir)
+            for file in files_to_be_copied:
+                src = file
+                dst = os.path.join(dir, file)
+                copy(src, dst)
+
+            kpoints_file = os.path.join(dir, 'KPOINTS')
+            kp.kpoints().read(kpoints_file).set_kpoints((n1,n2,n3)).write(kpoints_file)
+
+            ready_file = os.path.join(dir, 'ready')
+            open(ready_file, 'w').close()
+        else:
+            print '%s eixsts... Skipping' % (dir)

@@ -1,0 +1,13 @@
+#! /bin/bash
+
+dirs=`ls -d ??`
+for dir in $dirs; do
+  cd $dir
+  if [ -f 'OSZICAR' ]; then
+    eng=`grep F= OSZICAR | tail -n 1 | awk '{print $5}'`
+    echo $dir $eng
+  else
+    echo $dir
+  fi
+  cd ..
+done

@@ -1,0 +1,45 @@
+#! /usr/bin/python
+
+#PBS -l nodes=1:ppn=1
+
+import os
+import shutil
+import subprocess as sp
+
+import sys
+import incar
+import checks
+
+submitcmd = 'mpirun -np 1 vasp > vasp.out'
+rootdir = os.environ['PBS_O_WORKDIR']
+os.chdir(rootdir)
+
+steps = [
+# Non-spin polarized, relax volume
+'ibrion = 2, nsw = 40, ismear = 1, isif = 2, prec = normal, potim = 0.1, lreal = auto, encut = 400',
+# Relax volume
+'isif = 7',
+# Re-relax ions, shape and volume, high precision
+'isif = 3, potim = 0.1, prec = accurate, ediff = 1e-5, ediffg = -0.01',
+# Accurate energy and DoS,
+'nsw = 0, ismear = -5, ibrion = -1, lorbit = 11']
+
+tests = [
+'convergence',
+'convergence',
+'convergence',
+'completion'
+]
+
+calclog = open('calc.log', 'w')
+for step, test in zip(steps, tests):
+    incar.incar().read('INCAR').settag(string=step).write()
+    sp.Popen(submitcmd, shell=True).wait()
+    test_to_run = "checks." + test + "('vasp.out')"
+    if eval(test_to_run):
+        sp.Popen('vasp_move.sh', shell=True).wait()
+        calclog.write(' '.join([step, test, 'done']) + '\n')
+        calclog.flush()
+    else:
+        calclog.write(' '.join(['Error at', step]) + '\n')
+        sys.exit()

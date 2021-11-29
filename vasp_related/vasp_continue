@@ -1,0 +1,47 @@
+#!/usr/bin/env python2
+
+from os import listdir,system,access,R_OK
+from sys import exit
+
+if raw_input("This will backup the current calculation in to RUNx directory and will prepare a continuation run. Would you like to proceed? (y for yes): ")!="y": exit()
+fl = listdir(".")
+fl.sort()
+flag=0
+ind=0
+for fn in fl:
+    if fn[0:3]=="RUN" :
+	#print fn
+        #ind = int(fn[4:])
+	ind +=1
+
+run="RUN%d"%(ind+1)
+print "Current data is stored in %s."%run
+system('mkdir %s'%run)
+if raw_input('Do you want to keep the CHG and CHGCAR files? (y: yes): ')!='y':
+    system('rm -f CHG CHGCAR')
+
+
+if access("scr_dir", R_OK):
+    print "scr_dir was found. Copying files from there."
+    system("mv scr_dir/* . ; rm scr_dir")
+
+system('cp * %s'%run)
+system('echo "y" | vasp_clean_dir.sh')
+system('mv %s/WAVECAR .'%run)
+
+system("echo ")
+
+system('cp %s/CONTCAR POSCAR'%run)
+
+#It is better to use CONTCAR instead of CENTCAR for a DIMER calculation.
+if access("%s/CENTCAR"%run, R_OK): system('cp %s/CENTCAR POSCAR'%run)
+else: system('cp %s/CONTCAR POSCAR'%run)
+
+
+if access("%s/WAVECAR"%run, R_OK): 
+	if 0: system("mv %s/WAVECAR ."%run)
+#system('rm -f %s/WAVECAR '%run)
+
+if access("%s/NEWMODECAR"%run, R_OK): system('cp %s/NEWMODECAR MODECAR'%run); system('rm WAVECAR')
+    
+

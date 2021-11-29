@@ -1,0 +1,27 @@
+#! /bin/bash
+
+if [ $# -eq 0 ]; then
+  echo "Usage: makepotcar <xctype> <<atom name 1> [atom name 2] [atom name 3]"
+  exit 1
+fi
+
+if [ -f POTCAR ]; then
+  echo "POTCAR already exists. Appending to it."
+fi
+
+upperpot=`echo $1 | tr '[:lower:]' '[:upper:]'`
+vasp_pot_dir="$VASP_PP_PATH"/pot_PAW_"$upperpot"
+echo "Using potentials from" "$vasp_pot_dir"
+
+for atom in $*; do
+  if [ -d "$vasp_pot_dir/$atom" ]; then
+    cp $vasp_pot_dir/"$atom"/POTCAR "$atom" || cp $vasp_pot_dir/"$atom"/POTCAR.Z "$atom".Z
+    gunzip "$atom".Z 
+    cat "$atom" >> POTCAR
+    rm "$atom"
+  else
+    echo "Potential for "$atom" doesn't exist"
+    # exit 2
+  fi
+done
+exit 0

@@ -1,0 +1,61 @@
+#! /usr/bin/env python
+
+import ase
+from ase.io import vasp
+import numpy as np
+import os, sys
+from ase.calculators.vasp import Vasp
+
+#cell = [12.0, 12.0, 12.0]
+
+if len(sys.argv) < 3:
+    print "Usage: %s <center atom>" % (sys.argv[0])
+    print "Note: Atom count starts at 0"
+    sys.exit(-1)
+
+center_atom = int(sys.argv[1])
+cell = 3*[float(sys.argv[2])]
+
+atoms = ase.io.read('molecule.xyz')
+atoms.set_cell(cell)
+
+# Move atoms to center of cell
+def put_atom_at_center(i):
+    # Center of cell
+    C = 0.5*(atoms.get_cell().sum(axis=1))
+    AC = C - atoms.get_positions()[i]
+    atoms.translate(AC)
+    return None
+
+put_atom_at_center(center_atom)
+
+calc = Vasp(
+        encut = 400,
+        enaug = 645,
+        ismear = -1,
+        sigma = 0.05,
+        lreal = 'Auto',
+        prec = 'Accurate',
+        potim = 0.1,
+        ispin = 2,
+        ibrion = 2,
+        nsw = 40,
+        ediff = 1e-6,
+        ediffg = -0.01,
+        lwave = '.FALSE.',
+        lcharg = '.FALSE.',
+        lorbit = 11,
+        xc = 'PBE',
+        kpts = (2,2,2),
+        gamma = True)
+
+        
+calc.initialize(atoms)
+if not os.path.exists('POSCAR'):
+    vasp.write_vasp('POSCAR', calc.atoms_sorted, symbol_count = calc.symbol_count, direct=False)
+    calc.write_incar(atoms)
+    calc.write_kpoints()
+    calc.write_potcar()
+else:
+    print 'POSCAR exists. Quitting...'
+    sys.exit(-1)

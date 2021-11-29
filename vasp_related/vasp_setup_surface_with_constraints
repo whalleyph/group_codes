@@ -1,0 +1,50 @@
+#! /usr/bin/env python
+
+import ase
+from ase.lattice.surface import *
+from ase.io import vasp
+from ase.calculators.vasp import Vasp
+import os, shutil
+import numpy as np
+
+# Element
+ele = 'Pd'
+
+# Bulk lattice parameters
+a = 3.9483257309
+
+# Surface
+surf = fcc111
+
+# Supercell
+n1,n2,n3 = 3,3,6
+
+# kpts
+k1,k2,k3 = 8,8,1
+
+# Set up the surface with a 2x2x6 Pt layers and vacuum of 15 Ang.
+surface = surf(ele, size=(n1,n2,n3), a=a, vacuum=7.5)
+
+# Constrain 3 layers at the bottom
+c = ase.constraints.FixAtoms(indices=range(n1*n2*3))
+surface.set_constraint(c)
+
+calc = ase.calculators.vasp.Vasp(
+        encut = 400,
+        enaug = 650,
+        ismear = 1,
+        sigma = 0.1,
+        lreal = 'Auto',
+        prec = 'Normal',
+        potim = 0.1,
+        ibrion = 2,
+        nsw = 40,
+        ediff = 1e-4,
+        xc = 'PBE',
+        kpts = (k1,k2,k3),
+        gamma = True)
+calc.initialize(surface)
+vasp.write_vasp('POSCAR', calc.atoms_sorted, symbol_count=calc.symbol_count, direct=False)
+calc.write_incar(surface)
+calc.write_potcar()
+calc.write_kpoints()

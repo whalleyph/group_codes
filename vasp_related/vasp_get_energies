@@ -1,0 +1,22 @@
+#! /bin/bash
+
+dirs=$*
+pwd=`pwd`
+#echo "$dirs"
+if [ -z "$1" ]; then 
+  dirs="."
+fi
+
+for dir in $dirs; do
+  cd $dir
+  #eng=`grep -q req vasp.out 2> /dev/null && grep F= vasp.out | tail -n 1 | awk '{print $5}'`
+  #[ "$eng" ] && echo $dir $eng || echo $dir
+  #E=`grep F= vasp.out | tail -n 1 | awk '{print $5}'`
+  E1=`grep "free  energy   TOTEN  =" OUTCAR | tail -n 1 | awk -F= '{print $NF}' `
+  E=`echo $E1 | awk -Fe '{print $1}'`
+  #echo $E
+  #echo   "`pwd | awk -F/ '{print $NF}'` `grep F= vasp.out | tail -n 1 | awk '{print $5}'`"
+  echo "`pwd | awk -F/ '{print $NF}'` $E "
+  #echo "$eng"
+  cd $pwd
+done
