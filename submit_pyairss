@@ -1,0 +1,55 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=128
+#SBATCH --cpus-per-task=1
+
+#SBATCH --mem-per-cpu=3850
+##SBATCH --mem-per-cpu=7700
+##SBATCH --mem=492800
+##SBATCH --mem=985600
+
+#SBATCH --account=su102
+##SBATCH --account=su007-bk
+
+#SBATCH --partition=compute
+#SBATCH --partition=hmem
+##SBATCH --partition=devel
+#SBATCH --time=48:00:00
+#SBATCH --time=01:00:00
+
+#Max walltime:
+#normal: 48h ; devel: 1 h
+
+export AIRRS_PATH="$HOME/APPS/pyairss"
+export PYTHONPATH="$AIRRS_PATH:$PYTHONPATH"
+export exe="$AIRRS_PATH/airss.py"
+export PATH="$AIRRS_PATH/:$PATH"
+
+
+export castep_path="$HOME/APPS/CASTEP-19.1/"
+export PATH="$castep_path/:$PATH"
+export PSPOT_DIR="$HOME/APPS/pspots/"
+export GFORTRAN_TMPDIR="."
+
+
+#NP=$SLURM_NTASKS
+NP=$SLURM_NTASKS #no of processes(optimisation task) to run in parallel.
+NC=1 #no of cores assigned for each task (you don't need more than 1 core, unless you do geometry optimsiations at the same time, which you probably won't).
+
+echo "Starting time: " `date`
+
+#srun hostname |sort >hosts #this is done by compute.py in Matador.
+
+export master="`ls  *master*.log | tail -n 1`"
+if [ "$master" == "" ]; then
+        python2 $exe input -c $((NC/NP)) -t $NP -spg -r 0  -mr 500 -kt 5  -v 1 --hash  >> /dev/null #./airss.out
+else
+        echo "Restarting using $master"
+        python2 $exe input -c $((NC/NP)) -t $NP -spg -r 0  -mr 500 -kt 5  -v 1  --reload $master --hash >> /dev/null # ./airss.out
+fi
+
+
+rm -f *core*
+
+echo "End time: "
+

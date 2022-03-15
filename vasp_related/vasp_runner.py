@@ -14,7 +14,7 @@ import time
 #import ase.build.tools
 import matplotlib.pyplot as plt
 import ase.calculators.castep,ase.calculators.vasp
-from ase.calculators.vasp import Vasp,Vasp2 #requires ase 3.17.0
+from ase.calculators.vasp import Vasp,Vasp2 #requires ase 3.17.0 or higher
 from spglib import find_primitive,standardize_cell,get_spacegroup #, niggli_reduce #niggli_reduce from ASE-tools conflicts with that from spglib.
 from ase.build import niggli_reduce
 import argparse
