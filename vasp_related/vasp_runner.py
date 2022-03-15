@@ -67,8 +67,34 @@ def grep(key,fname,n=-1):
                 return ""
 
 
+def handle_magmoms(atoms, magmoms):
+    """
+    The magamoms variable should be a list parsed by argparse in the form:
+    [...] -mgm Fe 5 Nb 0.6 O 0.6 [...]
+    which is then converted to a dictionary:
+    d = {
+        'Fe': 5.,
+        'Nb': 0.6,
+        'O': 0.6
+        }
+    """
+    if magmoms is None:
+        print("Magnetic moments not set with ASE.")
+        return atoms
+    elements = magmoms[::2]
+    values = magmoms[1::2]
+    d = dict(zip(elements, values))
+    init_mgm = []
+    for s in atoms.symbols:
+        if s not in elements:
+            init_mgm.append(0)
+        else:
+            init_mgm.append(d[s])
+    atoms.set_initial_magnetic_moments(init_mgm)
+    return atoms
 
-def call_vasp_v2(fname,exe=None,xc='pbe'):
+            
+def call_vasp_v2(fname,exe=None,xc='pbe', mgms=None):
 
     if not exe: exe=getenv('VASP_COMMAND') ; #print ('bk')
     if not exe: exe='vasp_std'
@@ -112,6 +138,10 @@ def call_vasp_v2(fname,exe=None,xc='pbe'):
         calc.read_incar(filename='INCAR')
         if os.path.exists("./OUTCAR"):   vasp_continue()
         atoms=ase.io.read("POSCAR",format="vasp")
+        
+        # Adding MAGMOM and ISPIN to INCAR if -mgm or --magamoms is defined.
+        atoms = handle_magmoms(atoms=atoms, magmoms=mgms) 
+        
         #try:atoms=ase.io.read("POSCAR",type="vasp",format="vasp4)
         calc.set(xc=xc)
         #setups='recommended'
@@ -163,6 +193,7 @@ parser.add_argument('-ph_np','--phonons_noplot', default=False,action='store_tru
 
 parser.add_argument('-ph_path','--phonons_path', default=None,type=str,help='The high-symmetry Q-point path for a phonon calculation.')
 
+parser.add_argument("-mgm","--magmoms", default=None, nargs="*", required=False, help="Magnetic moments for a colinear calculation. Eg, 'Fe 5.0 Nb 0.6 O 0.6' Def.: None. If a defined element is not present in the POSCAR, no MAGMOM will be set for it.")
 
 args = parser.parse_args()
 
@@ -219,7 +250,7 @@ for inpf in args.inpf:
     #if Popen4(""" grep 'reached required accuracy - stopping structural energy minimisation' """)[0]: 
     if not args.dryrun:
         time.sleep(uniform(0.5, 2.0)) #this to prevent overwriting when two seperate instances of vasp_runner starts running  in parallel in the same foelder at the same exact time.
-        try: Ep,atoms=call_vasp_v2(inpf,exe,xc=args.xc)
+        try: Ep,atoms=call_vasp_v2(inpf,exe,xc=args.xc, args.magmoms)
         except Exception as err:print('%s: Problem with %s, skipping...'%(err,inpf));chdir(cwd);continue
     else: 
       try: Ep=atoms.info['energy']; 
