@@ -25,8 +25,6 @@ from ase.visualize import view
 
 import random
 from ase.build import molecule
-from ase.geometry import wrap_positions
-
 
 from ase.geometry import find_mic  #min dist through PBC using the minimum-image covnenti
 def minDist_ASE(arr1,arr2,latt): #needs np.array inputs
@@ -233,10 +231,7 @@ parser.add_argument('-ind','--index', type=int,required=False, help='Index of th
 
 parser.add_argument('-skip','--skip', type=int,default=1,required=False, help='To skip steps while reading a trajectory. Def: All steps')
 
-parser.add_argument('-uw','--unwrap',default=False,action='store_true', help='Generate unwrapped coordinates, as needed for MSD and VFAC, in case input coordinates are wrapped into cell. Def: No unwrapping done.')
-
-parser.add_argument('-wr','--wrap',default=False,action='store_true', help='Enforce wrapping of coordinates into the cell. Def: No wrapping done.')
-
+parser.add_argument('-uw','--unwrap',default=False,action='store_true', help='Generate unwrapped coordinates needed for MSD and VFAC, in case input coordinates are wrapped into cell. Def: No unwrapping done.')
 
 parser.add_argument('-r','--rep', nargs=3, type=int,help="Repeat the resulting structure in a, b, c directions, e.g. -r 2 2 1")
 
@@ -258,8 +253,6 @@ parser.add_argument('-ovito','--useOvito', default=False,action='store_true', he
 parser.add_argument('-airss','--airss', default=False,action='store_true', help='Format the geometry to be used in AIRSS input')
 
 parser.add_argument('-molecule','--molecule', default=False,action='store_true', help='Create the LAMMPS molecule input to be used in deposition, pour etc. simulations.')
-
-parser.add_argument('-optim_xtb','--optim_xtb', default=False,action='store_true', help='Create the LAMMPS molecule input to be used in deposition, pour etc. simulations.')
 
 parser.add_argument('-group','--group', type=str, choices=['no'], help="Group the resulting output files in different directories based on e.g. atom numbers, etc. Options: 'no': total number of atoms, 'xx': XX,")
 
@@ -287,7 +280,6 @@ parser.add_argument('-add_ori', '--adsorb_ori', nargs=3, type=float, default=Non
 
 parser.add_argument('-v','-view','--view', default=False,action='store_true', help='View the final structure')
 
-
 args = parser.parse_args()
 
 initT=time.time()
@@ -296,10 +288,11 @@ initT=time.time()
 
 if args.ifPrim or args.kpath: from spglib import *; print ("Symmetry is determined using tol = %f"%args.tol)
 
-if args.otype=='pdb':args.otype='proteindatabank'
-elif args.otype=='cell':args.otype='castep-cell'
 ext=args.otype.split("-")[-1]
+if args.otype=='pdb':args.otype='proteindatabank'
+elif args.otype=='extxyz':ext='xyz'
 if ext=='proteindatabank':ext='pdb'
+
 if args.ifAll: index="::%d"%args.skip
 else:
     if args.index: index=args.index
@@ -403,9 +396,13 @@ for inpf in args.inpf:
             else:atoms=ase.io.read(inpf,format=args.itype,index=index)
         else: atoms=ase.io.read(inpf,index=index) #ASE automatically determines from the extension.
 
-        if not args.ifAll and args.setcell: 
-            atoms.set_cell(args.setcell,scale_atoms=0) 
-            atoms.center()
+        if args.setcell: 
+            if not args.ifAll:
+              atoms.set_cell(args.setcell,scale_atoms=0);atoms.set_pbc(1)
+              atoms.center()
+            else:
+              for i,at in enumerate(atoms):
+                atoms[i].set_cell(args.setcell,scale_atoms=0);atoms[i].set_pbc(1)
 
         if args.ifAll: print('%d steps were read from %s, skipping %d steps.'%(len(atoms),inpf,args.skip));stdout.flush()
         
@@ -429,18 +426,10 @@ for inpf in args.inpf:
                             else: shifts[at][j]+=diff 
                     atoms[st].set_scaled_positions(init_pos+shifts)
                     ppos=dc(cpos)
-         
-        if args.unwrap and not args.ifAll: print ("Unwrapping of the atomic coordinates requires a multi-step/trajectory input"); exit()
-        
-        if args.wrap: #wrap coordinates back into cell
-            if args.ifAll: 
-               atoms_new=[]
-               for i in range(len(atoms)):   x=dc(atoms[i]); x.wrap(pbc=1);atoms_new.append(x); 
-               atoms=dc(atoms_new)
-               #atoms=[wrap_positions(atom)
-            else:atoms.wrap()
 
-        if args.ifAll and (args.ifPrim or args.rep or args.interstices or args.airss or args.molecule or args.optim_xtb):  print ("Primitive cell, cell repetition/extension, adding interstices and elemental swapping, AIRSS input and LAMMPS molecule input and OPTIM+XTB input are not compatible with a multi-step/trajectory input"); exit()  #args.swaps or   
+        if args.unwrap and not args.ifAll: print ("Unwrapping of the atomic coordinates requires a multi-step/trajectory input"); exit()
+
+        if args.ifAll and (args.ifPrim or args.rep or args.interstices or args.airss or args.molecule):  print ("Primitive cell, cell repetition/extension, adding interstices and elemental swapping, AIRSS input and LAMMPS molecule input are not compatible with a multi-step/trajectory input"); exit()  #args.swaps or   
 
 
         if args.swaps:
@@ -547,10 +536,6 @@ for inpf in args.inpf:
         if args.min_tilt:
             minimize_tilt(atoms, order=range(0, 3), fold_atoms=True)
 
-        if args.rep: 
-            atoms=atoms.repeat(args.rep)
-            atoms=sort(atoms)
-
         if args.zlim:
             print('Length before deletion: %d'%len(atoms))
             zlim=args.zlim
@@ -560,7 +545,7 @@ for inpf in args.inpf:
             print('Length after deletion: %d'%len(atoms))
         
         #if args.coord and not args.ifAll:
-        if args.coord: #TODO: This one is not working well, use the one in cryan_analyse.py
+        if args.coord:
             cutoff=1.85 #Angstroem for determining the coord no: for C-C:1.85
             font = {'family': 'serif', 'size': 18}
             plt.rc('font', **font)
@@ -658,7 +643,13 @@ for inpf in args.inpf:
                     print (path)
                 except: raise Error; continue
 
+        if args.rep: 
+            atoms=atoms.repeat(args.rep)
+            atoms=sort(atoms)
+            x=outf.split('/')[-1].split('.')
+            outf=x[0]+"_%dx%dx%d"%(args.rep[0],args.rep[1],args.rep[2])+'.'+x[1]
 
+ 
         if args.airss:
             #Create AIRSS input
             seed=inpf.split('.')[0]
@@ -672,30 +663,6 @@ for inpf in args.inpf:
                     #f.write("%-2s %12.8f %12.8f %12.8f #%s %% %s \n"%(at.symbol,scpos[ai][0],scpos[ai][1],scpos[ai][2],"group"+str(len(atoms)),x))
             continue
 
-        if args.optim_xtb:
-            with open('mass','w') as f:
-                for at in atoms: f.write("%s %.2f\n"%(at.symbol,at.mass))
-
-            with open('coords','w') as f:
-                for at in atoms: f.write('%15.8f %15.8f %15.8f\n'%(at.position[0],at.position[1],at.position[2]))
-            
-            atoms.write('input.turbo',format='turbomole')
-            #TODO:replace $coord with $coord angs and add periodic info in the beginning.
-            a,b,c,alpha,beta,gamma=atoms.get_cell_lengths_and_angles()
-            str1="""$periodic 3
-$cell angs
-    %.5f %.5f %.5f %.1f %.1f %.1f
-"""%(a,b,c,alpha,beta,gamma)
-            
-            with open('input.turbo','r') as f:
-                lines=f.readlines()
-            with open('input.turbo','w') as f:
-                f.write(str1)
-                for i in range(len(lines)):
-                    if i==0: f.write('$coord angs\n')
-                    else:f.write(lines[i])
-            continue
-                
         if args.molecule:
             seed=inpf.split('.')[0]
             #with open(seed+'.data','w') as f:
@@ -720,12 +687,9 @@ $cell angs
 
         if args.otype=="vasp":ase.io.write(outf,atoms,format=args.otype,vasp5=True)
         elif args.otype=="lammps-data":ase.io.write(outf,atoms,format=args.otype,atom_style='charge')
-        elif args.otype=='castep-cell':ase.io.write(outf,atoms,format=args.otype,positions_frac=1)
-        #elif args.otype=='':
         elif args.otype=='res':  
-            if args.itype=='vasp':
-                Ep=atoms.get_total_energy()
-                atoms.info['energy']=Ep
+            if 0:
+                atoms.info['energy']=atoms.get_total_energy()
                 atoms.info['name']=inpf
                 P=atoms.info.get('pressure')
                 if P is not None: atoms.info['pressure']=P
@@ -733,20 +697,10 @@ $cell angs
                 SG=atoms.info.get('spacegroup')
                 if SG is None:   SG=str(get_spacegroup(atoms, symprec=args.tol).symbol)
                 atoms.info['spacegroup']=SG
-                atoms.info['times_found']=1
+                atoms.info['times_found']=0
 
-            #try:
-            if 1:
-                #ase.io.res.write_res(outf, atoms, write_info=0, write_results=1, significant_figures=6)
-                myres=ase.io.res.Res(atoms)
-                try: Ep=atoms.info['energy']
-                except:
-                  try:Ep=atoms.get_total_energy()
-                  except:Ep=None
-                myres.energy=Ep
-                myres.write_file(outf, write_info=0,  significant_figures=6) #works!
-            #except:ase.io.write(outf,atoms,format=args.otype)
-
+            try:ase.io.res.write_res(outf, atoms, write_info=0, write_results=0, significant_figures=6)
+            except:ase.io.write(outf,atoms,format=args.otype)
         else: ase.io.write(outf,atoms,format=args.otype)
 
 

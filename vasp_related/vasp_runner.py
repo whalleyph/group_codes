@@ -14,7 +14,7 @@ import time
 #import ase.build.tools
 import matplotlib.pyplot as plt
 import ase.calculators.castep,ase.calculators.vasp
-from ase.calculators.vasp import Vasp,Vasp2 #requires ase 3.17.0 or higher
+from ase.calculators.vasp import Vasp#,Vasp2 #requires ase 3.17.0 or higher
 from spglib import find_primitive,standardize_cell,get_spacegroup #, niggli_reduce #niggli_reduce from ASE-tools conflicts with that from spglib.
 from ase.build import niggli_reduce
 import argparse
@@ -78,23 +78,78 @@ def handle_magmoms(atoms, magmoms):
         'O': 0.6
         }
     """
-    if magmoms is None:
-        print("Magnetic moments not set with ASE.")
-        return atoms
+    if magmoms is None:   return atoms
+    else: print("Magnetic moments are set with ASE: %s"%magmoms)
+    
     elements = magmoms[::2]
     values = magmoms[1::2]
     d = dict(zip(elements, values))
     init_mgm = []
-    for s in atoms.symbols:
+    #for s in atoms.symbols:
+    for s in atoms.get_chemical_symbols():
         if s not in elements:
             init_mgm.append(0)
         else:
             init_mgm.append(d[s])
+    #print([[atoms.get_chemical_symbols()[i],init_mgm[i]] for i in range(len(init_mgm))])
     atoms.set_initial_magnetic_moments(init_mgm)
     return atoms
 
+def set_hubU(atoms,hubU):
+    #atoms.calc.set(ldau_luj={'Si': {'L': 1, 'U': 3, 'J': 0}})
+
+    if len(hubU)>0: #is not None:
+        atoms.calc.set(ldau=".True.",ldauprint=0,ldautype=2,lmaxmix=6)
+        ats=sorted(hubU.keys())
+        ldauu=[];ldaul=[]
+        #asyms=np.unique(atoms.get_chemical_symbols())#this automatically sorts the atom order
+        asyms = list(dict.fromkeys(atoms.get_chemical_symbols()))
+        #print (atoms.get_chemical_symbols(),asyms)
+        for at in asyms:
+            if at in ats: #continue
+                if len(hubU[at].keys())>1: print("WARNING: cannot set multiple U values for the same atom type (%s), setting to 0... "%at);ldauu.append(0);ldaul.append(0);continue
+                #print (hubU[at].keys()[0])
+                orb="".join(hubU[at].keys())#[0] indexing in dict_key format is a problem in Python3.
+                ldauu.append(float(hubU[at][orb]))
+                if orb=="p":ldaul.append(1)
+                elif orb=="d":ldaul.append(2)
+                elif orb=="f":ldaul.append(3)
+            else:ldaul.append(0);ldauu.append(0)
+        atoms.calc.set(ldauj=[ 0 for i in range(len(asyms)) ])
+        atoms.calc.set(ldauu=ldauu,ldaul=ldaul)
+        atoms.calc.set(lasph=1)#This is essential for accurate total energies and band structure calculations for f-elements (e.g. ceria), all 3d-elements (transition metal oxides), and magnetic atoms in the 2nd row (B-F atom), in particular if LDA+U or hybrid functionals or meta-GGAs are used, since these functionals often result in aspherical charge densities.
+    return atoms
+
+def get_potcar(elements, xc):
+    ppdir = os.path.join(vasppp, xc)
+
+    pp = ''
+    for e in elements:
+        #print os.path.join(ppdir, e, 'POTCAR')
+        pp += open(os.path.join(ppdir, e, 'POTCAR')).read()
+
+    return pp
+
+def make_potcar(xc="potpaw_PBE",elements=None,wDir='./'):
+    try:    vasppp = os.environ['VASP_PP_PATH']
+    except: print ("VASP_PP_PATH is not defined, but neededor VASP calculation setup. Terminating. ");exit()
+
+    print('Making potcar using %s'%vasppp);stdout.flush();
+
+
+    if elements==None:#Try to read it from POSCAR if not explicitly given.
+        try: #VASP5 format.
+            elements = open(wDir+"/POSCAR").readlines()[5].strip().split()
+        except:
+            print ('Elements not given on command line and POSCAR not found')
+            sys.exit(-1)
+
+    pp = get_potcar(elements, xc)
+
+    p = open(wDir+"/POTCAR", 'w')
+    p.write(pp);    p.close()
             
-def call_vasp_v2(fname,exe=None,xc='pbe', mgms=None):
+def call_vasp_v2(fname,exe=None,xc='pbe', mgms=None,hubU={}):
 
     if not exe: exe=getenv('VASP_COMMAND') ; #print ('bk')
     if not exe: exe='vasp_std'
@@ -108,7 +163,8 @@ def call_vasp_v2(fname,exe=None,xc='pbe', mgms=None):
     try:chdir(seed)
     except:None
     
-    system('vasp_make_potcar -xc potpaw_PBE.54 &> /dev/null')
+    #system('vasp_make_potcar -xc potpaw_PBE.54 &> /dev/null')
+    if args.makepotcar: make_potcar(xc=args.potcarxc,wDir='.')
 
     #try:
     #       atoms = ase.io.read('vasprun.xml',index=0)
@@ -117,17 +173,14 @@ def call_vasp_v2(fname,exe=None,xc='pbe', mgms=None):
 
     flag=0 #whether to start a new/continuation run 
     try:
-        #try:
         calc = Vasp(restart=True)
-        #except:calc=None
         atoms = calc.get_atoms()
         print ("VASP run was read succesfully from OUTCAR.")
         if Vasp.read_convergence(calc): print('Geom opt already converged...')
         else:
-          print('Geom opt not converged running a continuation job...')
+          print('Geom opt not converged; running a continuation job...')
           flag=1
         
-        #else:
     except: 
         print ("VASP run could not be read, starting a new run...")
         flag=1
@@ -138,35 +191,34 @@ def call_vasp_v2(fname,exe=None,xc='pbe', mgms=None):
         calc.read_incar(filename='INCAR')
         if os.path.exists("./OUTCAR"):   vasp_continue()
         atoms=ase.io.read("POSCAR",format="vasp")
-        
-        # Adding MAGMOM and ISPIN to INCAR if -mgm or --magamoms is defined.
-        atoms = handle_magmoms(atoms=atoms, magmoms=mgms) 
-        
-        #try:atoms=ase.io.read("POSCAR",type="vasp",format="vasp4)
+        #atoms=ase.io.read(fname)
+
         calc.set(xc=xc)
-        #setups='recommended'
-        setups='minimal'
+        setups='recommended'
+        #setups='minimal'
         calc.set(setups=setups)
         calc.directory="."#cdir
         atoms.set_calculator(calc)
-        #calc.set(ldau_luj={'Si': {'L': 1, 'U': 3, 'J': 0}})
 
 
 
-    #try: 
+    # Adding MAGMOM and ISPIN to INCAR if -mgm or --magmoms is defined.
+    atoms = handle_magmoms(atoms=atoms, magmoms=mgms) 
+    if len(hubU)>0: atoms=set_hubU(atoms,hubU)
+
     Ep = atoms.get_potential_energy()
-    
-    #except:Ep=float(popen("grep 'free  energy   TOTEN' OUTCAR | head -n 1").readlines()[0][0:-1].split()[-1]);#print Ep  
-    #TODO:use popen4 instead
 
     chdir(cwd)
 
     return Ep,atoms
 
+try:    
+    vasppp = os.environ['VASP_PP_PATH']
+    ppdirs=os.listdir(vasppp)
+    ppdirs.sort()
+except: ppdirs=""
 
-parser = argparse.ArgumentParser(description='Script for converting between different file formats using the ASE interface.')
-#parser.add_argument('integers', metavar='N', type=int, nargs='+',
-#                    help='an integer for the accumulator')
+parser = argparse.ArgumentParser(description='Script for running a set of structure files (any format supported by ASE) using the ASE/VASP interface. An Example is vasp_runner.py -i *.res -np 128 -exe vasp_std -hubU V d 3.25 -mgm Nb 5 V 0.6 Li 0.6 O 0.6  -xc pbesol & ')
 
 
 parser.add_argument('-i','--inpf', nargs='*', type=str,required=True, help='Input file(s)')
@@ -193,7 +245,14 @@ parser.add_argument('-ph_np','--phonons_noplot', default=False,action='store_tru
 
 parser.add_argument('-ph_path','--phonons_path', default=None,type=str,help='The high-symmetry Q-point path for a phonon calculation.')
 
-parser.add_argument("-mgm","--magmoms", default=None, nargs="*", required=False, help="Magnetic moments for a colinear calculation. Eg, 'Fe 5.0 Nb 0.6 O 0.6' Def.: None. If a defined element is not present in the POSCAR, no MAGMOM will be set for it.")
+parser.add_argument("-mgm","--magmoms", default=None, nargs="*", required=False, help="Magnetic moments for a collinear calculation. Eg, 'Fe 5.0 Nb 0.6 O 0.6' Def.: None. If a defined element is not present in the POSCAR, no MAGMOM will be set for it.")
+
+parser.add_argument("-hubU", "--hubU", type=str,nargs="*",help="For defining the Hubbard U parameters (in eV) for specific atom and orbital types, e.g. -hubU Fe d 2.7, Sm f 6.1")
+
+
+parser.add_argument('-mp','-makepotcar','--makepotcar', default=False,action='store_true', help='to compile POTCAR (for VASP) using actual atomic content. The environment variable ($VASP_PP_PATH) should be defined beforehand. Default: False.')
+
+parser.add_argument('--potcarxc', default="potpaw_PBE",type=str,choices=ppdirs,help='XC functional to use in making of POTCAR. Def: potpaw_PBE')
 
 args = parser.parse_args()
 
@@ -207,22 +266,28 @@ exe="mpirun -np %d %s"%(args.nprocs,args.exe)
 
 
 #########
-if 0:
-  files=Popen4("""grep "reached required accuracy - stopping structural energy minimisation" C-*/vasp.out -L | awk -F/ '{print $1}' """) [0]
+if 0: #Get the non-converged structures (res files) from calculation folders.
+  files=Popen4("""grep "reached required accuracy - stopping structural energy minimisation" */vasp.out -L | awk -F/ '{print $1}' """) [0]
 
   print('List of calculations with non-converged geometry: ', files)
 
   cwd=os.getcwd()
   for f in files:
-    #os.chdir(f)
-    #if os.path.exists("%s/%s-final.res"%(f,f)): system('cp %s/%s-final.res %s.res'%(f,f,f))
-    #else:
       atoms=ase.io.read('%s/XDATCAR'%f, index=-1)
       ase.io.write('%s.res'%f,atoms,format='res')
 
-    #os.chdir(cwd)
-  #exit()
+#######
 
+#Parse the Hubbard_U info and make the dict
+hubU={}
+if args.hubU:
+    U=" ".join(args.hubU)
+    xxx=U.split(',')
+    for xx in xxx:
+        x=xx.split()
+        if not x[0] in hubU:  hubU[x[0]]={x[1]:x[2]}
+        else: hubU[x[0]][x[1]]=x[2]
+    print ("Hubbard U values to be used: ",hubU)
 #######
 
 system ('mkdir -p ./inputs')
@@ -247,10 +312,9 @@ for inpf in args.inpf:
 
     chdir(seed)
 
-    #if Popen4(""" grep 'reached required accuracy - stopping structural energy minimisation' """)[0]: 
     if not args.dryrun:
         time.sleep(uniform(0.5, 2.0)) #this to prevent overwriting when two seperate instances of vasp_runner starts running  in parallel in the same foelder at the same exact time.
-        try: Ep,atoms=call_vasp_v2(inpf,exe,xc=args.xc, args.magmoms)
+        try:  Ep,atoms=call_vasp_v2(inpf,exe,xc=args.xc, mgms=args.magmoms,hubU=hubU)
         except Exception as err:print('%s: Problem with %s, skipping...'%(err,inpf));chdir(cwd);continue
     else: 
       try: Ep=atoms.info['energy']; 
@@ -263,11 +327,8 @@ for inpf in args.inpf:
 
     #ASE does not get the Pressure right when restarting
     #P=atoms.info.get('pressure')
-    #if P is None: 
     P=float(Popen4("""grep pressure OUTCAR | tail -1 | awk '{print ($4+$9)*0.1}' """)[0][0]) #kB to GPa
     atoms.info['pressure']=P
-
-#grep "free  energy   TOTEN  = " $seed/OUTCAR  | tail -1 | awk '{print " VASP: Final Enthalpy     = "$5}' >> $seed.castep
 
     SG=atoms.info.get('spacegroup')
     if SG is None: 
@@ -315,7 +376,7 @@ for inpf in args.inpf:
             else: print('Dry run, no phonon calculations wll be done for %s'%inpf)
 
             # Read forces and assemble the dynamical matrix
-            method='Frederiksen' 
+            #method='Frederiksen' 
             method='standard'
             try: ph.read(acoustic=True,method=method) 
             except: print ('Problem while reading phonon calc from %s, skipping...'%seed);continue
@@ -332,7 +393,6 @@ for inpf in args.inpf:
             fig = plt.figure(1, figsize=(7, 4))
             ax = fig.add_axes([.12, .07, .67, .85])
 
-            #emax = 0.035 
             emax=0.04
             #emax=max(dos.get_energies()) #TODO: get this from user
             bs.plot(ax=ax, emin=0.0, emax=emax)
@@ -363,3 +423,12 @@ for inpf in args.inpf:
 
 
     chdir(cwd)
+
+
+
+
+
+
+
+
+#grep "free  energy   TOTEN  = " $seed/OUTCAR  | tail -1 | awk '{print " VASP: Final Enthalpy     = "$5}' >> $seed.castep

@@ -28,7 +28,7 @@ from functools import reduce
 from ase.calculators.lj import LennardJones as LJ
 from ase.calculators.morse import MorsePotential as MP
 import ase.calculators.castep
-from ase.calculators.vasp import Vasp,Vasp2 #requires ase >= 3.17.0
+from ase.calculators.vasp import Vasp #,Vasp2 #requires ase >= 3.17.0
 
 import random,string
 #import filecmp #Compare files
@@ -40,15 +40,22 @@ from spglib import find_primitive,standardize_cell,get_spacegroup #, niggli_redu
 from ase.build import niggli_reduce
 
 from tqdm import tqdm # to show progress bars for the for loops, but makes them slower.
+from p_tqdm import * #p_imap, p_map,p_umap, p_uimap #u:unordered, i:iterator #pip install p_tqdm --user     #https://pypi.org/project/p-tqdm/
+#from collections import defaultdict
 
 #import glob
 
 
+from subprocess import Popen,PIPE # as popen # check_output
+from sys import stdout,version_info
 
 """
 #To-do list:
 -Option to run multiple configs at each step in parallel (rather than sequential).
 -Support restarting !!!
+-Support for multiple dopant types
+-Hubbard U params through ASE
+-magmoms through ASE
 -Check for the size and atom number of the reference cell with input cell.
 -Check for the symm-equivalent configs before or after the structure modification (i.e. Li deletion)??
 -ADD PREOPTIMISE INPUT GEOM OPTION.
@@ -59,6 +66,53 @@ from tqdm import tqdm # to show progress bars for the for loops, but makes them 
 -Option for CASTEP energies.  DONE
 """
 
+def handle_magmoms(atoms, magmoms):
+    """
+    The magamoms variable should be a list parsed by argparse in the form:
+    [...] -mgm Fe 5 Nb 0.6 O 0.6 [...]
+    which is then converted to a dictionary:
+    d = {
+        'Fe': 5.,
+        'Nb': 0.6,
+        'O': 0.6
+        }
+    """
+    if magmoms is None:   return atoms
+    else: print("Magnetic moments are set with ASE: %s"%magmoms)
+
+    elements = magmoms[::2]
+    values = magmoms[1::2]
+    d = dict(zip(elements, values))
+    init_mgm = []
+    for s in atoms.symbols:
+        if s not in elements:
+            init_mgm.append(0)
+        else:
+            init_mgm.append(d[s])
+    atoms.set_initial_magnetic_moments(init_mgm)
+    return atoms
+
+def set_hubU(atoms,hubU):
+    if len(hubU)>0: #is not None:
+        atoms.calc.set(ldau=".True.",ldauprint=0,ldautype=2,lmaxmix=6)
+        ats=sorted(hubU.keys())
+        ldauu=[];ldaul=[]
+        #asyms=np.unique(atoms.get_chemical_symbols())#this automatically sorts the atom order
+        asyms = list(dict.fromkeys(atoms.get_chemical_symbols()))
+        #print (atoms.get_chemical_symbols(),asyms)
+        for at in asyms:
+            if at in ats: #continue
+                if len(hubU[at].keys())>1: print("WARNING: cannot set multiple U values for the same atom type (%s), setting to 0... "%at);ldauu.append(0);ldaul.append(0);continue
+                orb="".join(hubU[at].keys())#[0] indexing in dict_key format is a problem in Python3.
+                ldauu.append(float(hubU[at][orb]))
+                if orb=="p":ldaul.append(1)
+                elif orb=="d":ldaul.append(2)
+                elif orb=="f":ldaul.append(3)
+            else:ldaul.append(0);ldauu.append(0)
+        atoms.calc.set(ldauj=[ 0 for i in range(len(asyms)) ])
+        atoms.calc.set(ldauu=ldauu,ldaul=ldaul)
+        atoms.calc.set(lasph=1)#This is essential for accurate total energies and band structure calculations for f-elements (e.g. ceria), all 3d-elements (transition metal oxides), and magnetic atoms in the 2nd row (B-F atom), in particular if LDA+U or hybrid functionals or meta-GGAs are used, since these functionals often result in aspherical charge densities.
+    return atoms
 
 
 def Popen4(cmd):
@@ -87,9 +141,9 @@ def vasp_continue(ifDel=0):
         system('cp CONTCAR POSCAR') #this was missing in the previous version !!
         if ifDel: system('rm WAVECAR CHGCAR')
 
-def call_vasp_v2(fname='',exe=None): #atoms=None,
+def call_vasp_v2(fname='',exe=None,xc='pbe',mgms=None,hubU={}): #atoms=None,
 
-    if not exe: exe=getenv('VASP_COMMAND') ; #print ('bk')
+    if not exe: exe=getenv('VASP_COMMAND') ; 
     if not exe: exe='vasp_std'
     
     os.environ['VASP_COMMAND']=exe
@@ -100,32 +154,42 @@ def call_vasp_v2(fname='',exe=None): #atoms=None,
     seed=fname.split('.')[0]
     try:chdir(seed)
     except:None
+    print('Working dir: %s'%getcwd());stdout.flush();
 
     if args.makepotcar: make_potcar(xc=args.potcarxc,wDir='.')
 
+    flag=0 #whether to start a new/continuation run 
     try:
-        try:calc = Vasp(restart=True)
-        except:calc=None
+        calc = Vasp(restart=True)
         atoms = calc.get_atoms()
-        print ("VASP run was read succesfully from OUTCAR.")
+        print ("\nVASP run was read succesfully from OUTCAR.")
         if Vasp.read_convergence(calc): print('Geom opt already converged...')
-        else:print('Geom opt not converged running a continuation job...')
+        else:
+            print('Geom opt not converged; running a continuation job...')
+            flag=1
 
-        #else:
     except:
         print ("VASP run could not be read, starting a new run...")
-        calc=Vasp2()
+        flag=1
+
+    if flag:
+        calc=Vasp()
         calc.read_incar(filename='INCAR')
         if os.path.exists("./OUTCAR"):   vasp_continue()
         atoms=ase.io.read("POSCAR",format="vasp")
-        calc.set(xc="pbe",ibrion=2,setups='recommended')#TODO: POTCAR: add others or take from the user
+        #atoms=ase.io.read(fname)
+        #calc.set(xc="pbe",ibrion=2,setups='recommended')#TODO: POTCAR: add others or take from the user
+        calc.set(xc=xc)#,ibrion=2)
         calc.directory="."#cdir
-        #calc.read_potcar(filename='POTCAR')
-        #calc['setups']={'Ca':'_sv','Sr':'_sv'} #TODO: POTCAR: add others or take from the user
+        setups='recommended'
+        #setups='minimal'
+        calc.set(setups=setups)
         atoms.set_calculator(calc)
 
-    #atoms.calc.read_potcar(filename='POTCAR')
-    #atoms.calc.setups={'Ca':'_sv','Sr':'_sv'} #TODO: POTCAR: add others or take from the user
+    # Adding MAGMOM and ISPIN to INCAR if -mgm or --magmoms is defined.
+    atoms = handle_magmoms(atoms=atoms, magmoms=mgms) 
+    if len(hubU)>0: atoms=set_hubU(atoms,hubU)
+
     Ep = atoms.get_potential_energy() 
     chdir(cwd)
 
@@ -570,6 +634,8 @@ if __name__ == '__main__':
 
     parser.add_argument('-ow','--overwrite', default=False,action='store_true', help='overwrite if output folder exists. Def: No')
 
+    parser.add_argument('-rs','--restart', default=False,action='store_true', help='overwrite if output folder exists. Def: No')
+
     parser.add_argument('-prim','--ifPrim', default=False,action='store_true', help='use the primitive cell instead of supercell (requires SPGlib installed). Highly recommended for computational efficiency. Def: false')
 
     parser.add_argument('-ref', '--initCrysFile', type=str,help='File for obtaining the initial crystal site (symmetry) information. Can be any type that ASE supports. Def: same as the input file (-i)')
@@ -609,6 +675,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--potcarxc', default="potpaw_PBE",type=str,choices=ppdirs,help='XC functional to use in making of POTCAR. Def: potpaw_PBE')
 
+    parser.add_argument('-xc','--xc', type=str,required=False, default='pbe',help='Exchange correlation functional to use (pseudopots will be selected accordingly, e.g. LDA, PBE,PBEsol, etc. Def: PBE')
+
     parser.add_argument('-mod','--modify', type=str,help="To make some final touches on the configurations selected for enumeration. Keep in mind that these final modifications shoudl refer to the new atom indices. You can combine multiple modifications using multiple 'statements' (enclosed by single-quotations), the order of the statements will be strictly followed. This is a useful option to do necessary modifications to compansate for the dopant effect  e.g. balancing the total system charge  by deleting additional (nearest) cations upon introducing higher-valence cation(s). Def: No additional modifications.  Example usage: -mod 'replace all within 2 of Al with Va'.")
 
     parser.add_argument('-ai','--addint', default=False,action='store_true', help='To add the interstices as X atoms based on the  Wyckoff positions data for the reference symmetry gorup. Default: False.')
@@ -626,7 +694,9 @@ if __name__ == '__main__':
 
     parser.add_argument('-sf','--sepfol', default=False,action='store_true', help='to save geometries in separate folders (e.g. for VASP runs). Default: all output is written in the same directory (%s).'%outdir)
 
-    parser.add_argument('-np', '--nprocs',type=int, default=32,help="No of processes to start for each VASP calculation throuh mpirun. Def:32")
+    parser.add_argument('-np', '--nprocs',type=int, default=32,help="No of processes to start for each CASTEP/VASP calculation throuh mpirun. Def:32")
+
+    parser.add_argument('-nt', '--ntasks',type=int, default=1,help="No of processes to start for each VASP calculation throuh mpirun. Def:1")
 
     parser.add_argument("-t","--temp", type=float, default=298.15, help="Temperature at which the configrational thermodnamics is computed. Def: 298.15K")
 
@@ -636,6 +706,11 @@ if __name__ == '__main__':
     parser.add_argument("-spick","--seqpick", type=int, default=1, help="How many configs to pick at each step in a sequential doping. Def: 1")
 
     parser.add_argument("-stype","--seqtype", type=str, choices=['E','S','D','R'],default='E', help="How to sort the configurations at each step of  a sequential doping. Options: 'E': Based on Energy (low-energy configs are picked); 'S': based on symmetry (highest-symmetry configs picked); 'D': config(s) with highest degenaracy are picked; 'R': configs are picked randomly. Def: 'S' ")
+
+    parser.add_argument("-hubU", "--hubU", type=str,nargs="*",help="For defining the Hubbard U parameters (in eV) for specific atom and orbital types, e.g. -hubU Fe d 2.7, Sm f 6.1")
+
+    parser.add_argument("-mgm","--magmoms", default=None, nargs="*", required=False, help="Magnetic moments for a collinear calculation. Eg, 'Fe 5.0 Nb 0.6 O 0.6' Def.: None. If a defined element is not present in the POSCAR, no MAGMOM will be set for it.")
+
 
     parser.add_argument('-ase','--ASE_symm', default=False,action='store_true', help='Verbose output. Default: False.')
 
@@ -655,8 +730,18 @@ if __name__ == '__main__':
 
     if args.castep:args.seqtype='E'
 
+    #Parse the Hubbard_U info and make the dict
+    hubU={}
+    if args.hubU:
+        U=" ".join(args.hubU)
+        xxx=U.split(',')
+        for xx in xxx:
+            x=xx.split()
+            if not x[0] in hubU:  hubU[x[0]]={x[1]:x[2]}
+            else: hubU[x[0]][x[1]]=x[2]
+        print ("Hubbard U values to be used: ",hubU)
 
-   #Get the  dopant/vacancy number list.
+    #Get the  dopant/vacancy number list.
     nDops=[]
     for y in args.noDopants:
         x=y.split(':')
@@ -681,7 +766,9 @@ if __name__ == '__main__':
         if os.path.exists('Step1'):
             if args.overwrite: 
                 print("StepX folders exist. Overwriting as requested.")
-                #os.system('rm -rf Step* ')
+                os.system('rm -rf Step* ')
+            elif args.restart: 
+                print("StepX folders exist. Will try to restart the VASP calculations as requested.")
             else: 
                 print("StepX folders exists. Not overwriting, use -ow to overwrite."%outdir)
                 exit()
@@ -720,7 +807,7 @@ if __name__ == '__main__':
             if os.path.exists(outdir):
                 if args.overwrite: 
                         print("%s folder exists. Overwriting as requested."%outdir)
-                        os.system('rm -r ./%s'%(outdir))
+                        #os.system('rm -r ./%s'%(outdir))
 
                 else: 
                         print("%s folder exists. Not overwriting, use -ow to overwrite."%outdir)
@@ -747,7 +834,7 @@ if __name__ == '__main__':
                     if args.initCrysFile.split("/")[-1]=="POSCAR": fm="vasp";args.tol=1e0
                     else: fm=None
                     atoms_crys=ase.io.read(args.initCrysFile,format=fm)   
-                else:atoms_crys=deepcopy(atoms) #use input file as the template for symmetry.
+                else: atoms_crys=deepcopy(atoms) #use input file as the template for symmetry.
 
                 scaled_positions= atoms_crys.get_scaled_positions()
                 cell=(atoms_crys.cell, scaled_positions, atoms_crys.numbers)
@@ -758,7 +845,7 @@ if __name__ == '__main__':
 
 
             rpt_no=1
-            if args.ifPrim: 
+            if step==1 and args.ifPrim: 
                 print("Finding the primitive cell using SPGlib as requested.")
                 atoms_orig=atoms.copy()
                 scaled_positions= atoms.get_scaled_positions()
@@ -774,7 +861,7 @@ if __name__ == '__main__':
                 if rpt_no==1:#use volumes for cell comparison. If cell lengths failed for a reason.
                     rpt_no=round(volume(atoms_orig.cell)/volume(atoms.cell))  
 
-            if args.rep: 
+            if step==1 and args.rep: 
                 atoms=atoms.repeat(args.rep)
                 atoms=sort(atoms)
 
@@ -955,7 +1042,7 @@ if __name__ == '__main__':
                         except:None
                 print("New list of selected %d atoms: "%len(atoms_list),atoms_list)
                 if args.dopeexcluded:
-                        print ("Atoms in the excluded list will be doped/left vacant as requested.")
+                        print ("Atoms in the excluded list will not be doped/left vacant as requested.")
                         #Determine the dopant type for the excld list.
                         if args.dexcl_type=="":dexcl_type=args.dType
                         else:dexcl_type=args.dexcl_type
@@ -1028,10 +1115,12 @@ if __name__ == '__main__':
         """%(at.symbol)
 
 
-                symbols=[]
-                for x in atoms.get_chemical_symbols():
-                    if x not in symbols: symbols.append(x)
-                #print syms
+                #symbols=[]
+                #for x in atoms.get_chemical_symbols():
+                #    if x not in symbols: symbols.append(x)
+
+                symbols   = list(dict.fromkeys(atoms.get_chemical_symbols()))
+
 
                 #Final part.
                 str2=str2[0:-2]+'\n'
@@ -1050,17 +1139,35 @@ if __name__ == '__main__':
 
                 outff2.writelines(str2)#;outff2.flush()
 
-
+            ########
+            # Now create the defect configs here
+            #########
             cnt=0 #(current id/no of iredducible config/structures generated.
-            #for i in range(1,args.noDopants+1):
+
+            symbols   = list(dict.fromkeys(atoms.get_chemical_symbols()))
+            #symbols = atoms.get_chemical_symbols()
+            #print(symbols)
             for nD in nDops:
                 if nD > len(atoms_list):break
                 nc=ncr(len(atoms_list),nD)
                 if nc>2e4: #Too many possibilities.
                     print("Too many combinations (%.1e) to handle for %d vacancies/dopants, skipping..."%(nc,nD)); #continue
                 c=[x for x in combinations(atoms_list,r=nD)] #gives the selected atom ids
+                #print("%d configuration(s) found for %d vacancies/dopants."%(len(c),nD))
+
+                if len(args.aType)>1: #This is to ensure to include only the configs where all of the target sites are being doped (for instance, if you choose Li and Nb sites to dope, then the configs where both Li and Nb sites are doped).
+                    cnew=[]
+                    syms=atoms.get_chemical_symbols()
+                    for x in c:
+                        if len(np.unique([syms[i] for i in x ])) == len(args.aType):  cnew.append(x)
+                    #print("Reduced  %d configuration(s) found for %d vacancies/dopants."%(len(cnew),nD))
+                    c=cnew
+
                 print("%d configuration(s) found for %d vacancies/dopants."%(len(c),nD))
 
+                #########
+                #Now check the symm equivalence of the configs
+                ######
                 all_eSites=[] #irreducible configs saved so far
                 #all_eSites=np.array([]) #irreducible configs saved so far
                 degens=np.zeros((len(c))) #degeneracy of each config
@@ -1078,10 +1185,8 @@ if __name__ == '__main__':
 
                     if not args.nosymm:
                        #Now find the symetrically-equivalent configrations, by applying the symmops. Still iterating over the available configs. #Only include the selected ones for the given config/combination !!
-                        #coords=np.zeros((4,len(atoms_list)))
                         coords=np.zeros((4,len(conf)))
                         eFlag=0
-                        #print (conf)
                         for i,at in enumerate(conf): #iterate over the atoms in the current combination
                             #cpos=atoms[at].position #use the scaled positions instead!!
                             cpos=scpos[at] #use the scaled positions instead!!
@@ -1096,7 +1201,6 @@ if __name__ == '__main__':
                                 ifFound=np.zeros((len(conf)))
                                 used=np.zeros((len(conf)))
                                 for crd in equi: #loop over atoms in the equivalent configs This loop takes time.
-
                                     ifFound=np.zeros((len(conf)))
                                     used=np.zeros((len(conf)))
 
@@ -1172,7 +1276,6 @@ if __name__ == '__main__':
                     #End of symm. equivalence checking part.
 
                     if 0: #add ASE compare here
-                        None
                         SG=ase.spacegroup.Spacegroup(int(sg.split('(')[-1].replace(')','')))
                         etmp=SG.equivalent_sites(X,onduplicates='replace')[0] 
 
@@ -1218,8 +1321,8 @@ if __name__ == '__main__':
                         del atoms[[x for x in eList]]
                     else:
                         for at in conf: 
-                                if at in eList: atoms[at].symbol=args.dexcl_type
-                                else: atoms[at].symbol=args.dType
+                            if at in eList: atoms[at].symbol=args.dexcl_type
+                            else: atoms[at].symbol=args.dType
 
                     #Add the final modifications here!!!
                     if mod_type in ['within','nearest']:
@@ -1323,9 +1426,9 @@ if __name__ == '__main__':
 
 
             if cnt!=0:
-                print("\nTotal of %d configurations generated."%cnt)
+                print("\nTotal of %d symmetrically-unique configurations were generated."%cnt)
             else:
-                print ("No configurations generated. Terminating...");exit()
+                print ("No configurations were generated. Terminating...");exit()
 
             if args.ASE_symm: #Our implmenetaion for checking dopant subset of configs is faster than ASE implementaiton of comparing whole structures. This is for doing a last minute check for the pre-filtered set of configs. Sometimes ASE can find symm-equi configs as it also consdiers differetn atomic order and all set of atoms in the comparisons.
                 from ase.utils.structure_comparator import SymmetryEquivalenceCheck as ASE_SEC
@@ -1359,22 +1462,29 @@ if __name__ == '__main__':
                 outff.writelines(str11)#;outff.flush()
                 outff.close();outff2.close()
 
-            if 1:
+            ####
+            #Now do the actual VASP/CASTEP calculation (SP or geom opt).
+            if 1:  
                 degens=[d for d in degens if d !=0]
                 #print(degens)
                 energies=[];sgs=[]
 
+                print ("Total of %d cores will be used in %d parallel tasks."%(args.nprocs,args.ntasks))
                 if args.castep: 
                     try:cascmd=os.getenv("CASTEP_COMMAND")
                     except:cascmd=''
-                    if cascmd==None:cascmd="mpirun -np %s %s"%(args.nprocs,args.castepexe)
+                    if cascmd==None:cascmd="mpirun -np %s %s"%(args.nprocs/args.ntasks,args.castepexe)
                     print ("Castep command: ", cascmd)
                 elif args.vasp:
                     exe=getenv('VASP_COMMAND')
-                    if not exe: exe='mpirun -np %d %s'%(args.nprocs,args.vaspexe)
-                    #print("VASP command: ", exe)
+                    if not exe: exe='mpirun -np %d %s'%(args.nprocs/args.ntasks,args.vaspexe)
+                    print("VASP command: ", exe)
 
-                for i,d in enumerate(degens): #Can be parralised to work on multiple configs simultaneously.
+                
+
+                def callDFT(inp):
+                    i,d,seed=inp
+                    #energies=[];sgs=[]
                     #LJ and Morse potentials do not differentiate between the diff atom types. So give the same energies for different configrations. GULP (using force fields for lattices) or LAMMPS or CASTEP/VASP can be used instead.
                     atoms=deepcopy(all_configs[i])
                     fname=all_files[i]
@@ -1433,23 +1543,16 @@ if __name__ == '__main__':
                             #calc = ase.io.castep.read_seed('%s/%s'%('..',inpseed)) #this does not work
                             #atoms.set_calculator(calc)
                             atoms.calc.merge_param('%s/%s.param'%('..',inpseed))
-                            #atoms=ase.io.castep.read_castep_cell(open('%s/%s.cell'%('..',inpseed),'r')) #this does not work
                             atoms2=ase.io.castep.read_cell('%s/%s.cell'%('..',inpseed))
-                            #print(dir(atoms.calc))
-                            #print((atoms2.calc.todict()['cell']))#.keys()))
-                            #dict=atoms2.calc.todict()['cell']#.keys()
-                            #for x in dict:
                                 
                             try:
                             #if 1:
                                 val=atoms2.calc.cell.species_pot.value
-                                #val=list(val.replace('\n',' ').split())
                                 val=[ x.split() for x in val.split('\n')]
                                 val.pop(0)
-                                #print(val)
                                 
                                 atoms.calc.cell.species_pot=val
-                            except: print('Cannot asign the pspots defined in the reference cell file.')
+                            except: print('Cannot assign the pspots defined in the reference cell file.')
                             try:atoms.calc.cell.kpoints_mp_grid=atoms2.calc.cell.kpoints_mp_grid.value
                             except: None
                             try:atoms.calc.cell.kpoints_mp_spacing=atoms2.calc.cell.kpoints_mp_spacing.value
@@ -1484,27 +1587,26 @@ if __name__ == '__main__':
                         #TODO:check if the res file exists, and try to read it.
                         chdir(seed)
 
-                        print('Working dir: %s'%getcwd())
-                        system('cp ../../../%s/INCAR ../../../%s/POTCAR ../../../%s/KPOINTS .'%(args.idir,args.idir,args.idir)) #replace with cwd
+                        #print('Working dir: %s'%getcwd())
+                        system('cp ../../../%s/INCAR ../../../%s/POTCAR ../../../%s/KPOINTS . &> /dev/null '%(args.idir,args.idir,args.idir)) #replace with cwd
                         #system('cp %s/%s/INCAR %s/%s/POTCAR %s/%s/KPOINTS .'%(cwd,args.idir,cwd,args.idir,cwd,args.idir)) #replace with cwd
-                        #if args.makepotcar: make_potcar(xc=args.potcarxc,wDir='.')
-                        e2,atoms=call_vasp_v2(fname,exe)
+                        try: e2,atoms=call_vasp_v2(fname,exe=exe,xc=args.xc,mgms=args.magmoms,hubU=hubU)
+                        except: print('Problem with DFT calc of %s, skipping...'%fname);return (e1,0.0,atoms,'')
 
                         #ASE does not get the Pressure right when restarting
-                        a=Popen4("""grep pressure OUTCAR | tail -1 | awk '{print ($4+$9)*0.1}' """)[0][0]
-                        P=float(a) #kB to GPa
+                        P=float(Popen4("""grep pressure OUTCAR | tail -1 | awk '{print ($4+$9)*0.1}' """)[0][0]) #kB to GPa
                         atoms.info['pressure']=P
 
 
                         chdir(cwd)
 
-                    energies.append(e2) 
+                    #energies.append(e2) 
                     cell=(atoms.cell, atoms.get_scaled_positions(), atoms.numbers)
                     sg=get_spacegroup(cell, symprec=args.tol)
-                    sgs.append(sg)
+                    #sgs.append(sg)
 
                     atoms.info['energy']=e2 #atoms.get_total_energy()
-                    atoms.info['name']=seed
+                    atoms.info['name']=seed+'_'+str(cnt)
 
 
                     SG=atoms.info.get('spacegroup')
@@ -1518,24 +1620,44 @@ if __name__ == '__main__':
                             SG=str(get_spacegroup(atoms, symprec=args.tol))#.replace(' ',''))
                             atoms.info['spacegroup']=SG.split(' (')[0]
 
-                    atoms.info['times_found']=1
-                    atoms.info['name']=seed
-    
-                    print('%s: Ep= %.5f P= %.2f GPa SG= %s'%(seed,e2,P,atoms.info['spacegroup']))
-                    print('Writing the final geometry to %s.res...'%seed)
                     stoich=atoms.get_chemical_formula('hill',empirical=1)
+                    atoms.info['times_found']=1
+                    #atoms.info['name']="%s_%d"%(seed,cnt)
+                    atoms.info['name']="%s"%(stoich)
+    
+                    #print('%s_%d: Ep= %.5f P= %.2f GPa SG= %s'%(seed,cnt,e2,P,atoms.info['spacegroup']))
 
-                    if 1:
+                    if 0:
                         myres=ase.io.res.Res(atoms)
                         myres.energy=e2
                         myres.write_file('%s.res'%(seed), write_info=0,  significant_figures=6) #works!
                     else:
-                        ase.io.res.write_res('%s-%s-%s.res'%(stoich,seed,hashid()), atoms, write_info=0, write_results=1, significant_figures=6) #works but Energy is always None
+                        hid=hashid()
+                        #fn1='%s-%s-%s.res'%(stoich,seed,hid)
+                        fn1='%s-%s-%s.res'%(stoich,'config_enum',hid)
+                        fn2='Step%d/%s/%s'%(step,outdir,fname)
+                        ase.io.res.write_res(fn1, atoms, write_info=0, write_results=1, significant_figures=6) #works but Energy is always None #ARE THESE the OPTIMISED STRUCTURES CHECK????
+                        #ase.io.res.write_res(fn2, atoms, write_info=0, write_results=1, significant_figures=6)
+                        #system('cp %s %s'%(fn1,fn2))
+                        #ase.io.res.write_res('Step%d/%s/%s_%d.res'%(step,outdir,seed,cnt), atoms, write_info=0, write_results=1, significant_figures=6) #works but Energy is always None
 
 
-                    del atoms
+                    #del atoms
 
+                    #return (e2,atoms,energies,sgs)
+                    return (e1,e2,atoms,sg)
+                    
+                    #end of config loop
+                    #####
 
+                if len(degens)<args.ntasks: print('Fewer configs to calculate than the set no of parallel tasks (--ntask), reducing no of tasks to 1... '); ntasks=1
+                else: ntasks=args.ntasks
+
+                for res in p_imap(callDFT,[ [i,d,seed]  for i,d in enumerate(degens)],num_cpus=ntasks): #[degens[i],all_configs[i],all_files[i]]
+                    if res != None:
+                        e1,e2,atoms,sg=res
+                        energies.append(e2)
+                        sgs.append(sg)
 
                 P,Em_bar=boltz_dist(energies,T=args.temp,omega=degens) #probability and configrational free energy. 
 
@@ -1565,7 +1687,7 @@ if __name__ == '__main__':
         ######
         #Now pick the lucky configs for the next round...
 
-        if 0:
+        if args.verb:
             print ("All configs for Step %d"%step)
             for i in range(len(seqconfigs[0])):
               print(seqconfigs[0][i],seqconfigs[1][i],seqconfigs[2][i])
@@ -1596,6 +1718,8 @@ if __name__ == '__main__':
         #pAtoms=[]#array of Atoms objects for comparing current config with previous ones.
         pLines=[] #Lines of previous configs
         cnt2=0
+        system('touch Picked/Structures-are-not-optimised')
+        system('touch ./Structures-are-optimised')
         for i,cf in enumerate(x):#loop over ordered configs.
             if cnt2 ==args.seqpick: break
             #picked.append('../Step%d/%s/config_%d.res'%(step,outdir,int(cf[0])) )#take 2 from user
@@ -1610,9 +1734,16 @@ if __name__ == '__main__':
 
             picked.append(cf[0])
             ext=picked[-1].split('.')[-1]
-            if args.outf:of=args.outf
+            if args.outf: of=args.outf
             else:of='config'
-            system('cp ../%s Picked/%s_%d-%s.%s'%(picked[-1],of,cnt2,hashid(),ext))
+
+            atoms=ase.io.read('../%s'%picked[-1]); stoich=atoms.get_chemical_formula('hill',empirical=1)
+            #stoich=atoms.get_chemical_formula('hill',empirical=1)
+
+            x=picked[-1].split('/')
+            fname="%s-%s"%(x[1],x[2])
+            #system('cp ../%s Picked/%s-%s_%d-%s.%s'%(picked[-1],stoich,of,cnt2,hashid(),ext))
+            system('cp ../%s Picked/%s'%(picked[-1],fname))
             pLines.append(ln1)
             cnt2+=1
 
