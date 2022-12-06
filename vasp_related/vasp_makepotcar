@@ -1,27 +1,58 @@
 #! /bin/bash
 
+contains() { # For checking whether an array contains an element -- contains <array> <element>
+    arr=$1
+    if [[ " ${arr[*]} " =~ " ${2} " ]]; then
+        rval=1
+    else
+        rval=0
+    fi
+    return $rval
+}
+
 if [ $# -eq 0 ]; then
-  echo "Usage: makepotcar <xctype> <<atom name 1> [atom name 2] [atom name 3]"
-  exit 1
+    echo "Usage: makepotcar <xctype> <<atom name 1> [atom name 2] [atom name 3]"
+    exit 1
 fi
 
 if [ -f POTCAR ]; then
-  echo "POTCAR already exists. Appending to it."
+    echo "POTCAR already exists. Appending to it."
 fi
 
+sv=("Li" "K" "Ca" "Sc" "Ti" "V" "Rb" "Sr" "Y" "Rb" "Nb" "Mo" "Cs" "Ba" "W" "Fr" "Ra")
+pv=("Na" "Cr" "Mn" "Tc" "Ru" "Rh" "Hf" "Ta")
+d=("Ga" "Ge" "In" "Sn" "Tl" "Pb" "Bi" "Po")
+_3=("Pr" "Nd" "Pm" "Sm" "Eu" "Gd" "Tb" "Dy" "Ho" "Er" "Tm" "Lu")
+
 upperpot=`echo $1 | tr '[:lower:]' '[:upper:]'`
-vasp_pot_dir="$VASP_PP_PATH"/pot_PAW_"$upperpot"
+vasp_pot_dir="$VASP_PP_PATH"/potpaw_"$upperpot"
 echo "Using potentials from" "$vasp_pot_dir"
 
-for atom in $*; do
-  if [ -d "$vasp_pot_dir/$atom" ]; then
-    cp $vasp_pot_dir/"$atom"/POTCAR "$atom" || cp $vasp_pot_dir/"$atom"/POTCAR.Z "$atom".Z
-    gunzip "$atom".Z 
-    cat "$atom" >> POTCAR
-    rm "$atom"
-  else
-    echo "Potential for "$atom" doesn't exist"
-    # exit 2
-  fi
+
+for atom in ${@:2}; do
+    
+    if contains $sv $atom ; then             # I am working to get this script to
+        atom = "${atom}_sv"                      # use the default VASP POTCAR files,
+        elif contains $pv $atom ; then           # hence the long arrays above
+        atom = "${atom}_pv"                      # Currently, the 'contains' function
+        elif contains $d $atom ; then            # is broken.
+        atom = "${atom}_d"                       #
+        elif contains $_3 $atom ; then           #  Ben S, 2022
+        atom = "${atom}_3"
+    else
+        atom=$atom
+    fi
+    
+    echo $atom
+    echo "$vasp_pot_dir/$atom"
+    if [ -d "$vasp_pot_dir/$atom" ]; then
+        cp $vasp_pot_dir/"$atom"/POTCAR "$atom" || cp $vasp_pot_dir/"$atom"/POTCAR.Z "$atom".Z
+        gunzip "$atom".Z
+        cat "$atom" >> POTCAR
+        rm -f "$atom"
+    else
+        echo "Potential for "$atom" doesn't exist"
+        # exit 2
+    fi
 done
 exit 0

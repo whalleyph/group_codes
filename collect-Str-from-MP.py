@@ -1,8 +1,11 @@
 #!/bin/env python3
-from pymatgen.ext.matproj import *
-import pymatgen.io.ase
-import argparse ,os.path,re
+import argparse
+import os.path
+import re
+
 import ase.io
+import pymatgen.io.ase
+from pymatgen.ext.matproj import *
 
 parser = argparse.ArgumentParser(description='Script for retrieving structures from the Materials Project database for a given stoichiometry/composition.')
 

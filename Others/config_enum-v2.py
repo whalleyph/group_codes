@@ -152,8 +152,9 @@ def call_vasp_v2(fname='',exe=None,xc='pbe',mgms=None,hubU={}): #atoms=None,
     cwd=os.getcwd()
 
     seed=fname.split('.')[0]
-    try:chdir(seed)
-    except:None
+    try:system();chdir(seed)
+    except:print('Cannot change to %s directory, using %s instead'%(seed,cwd))
+
     print('Working dir: %s'%getcwd());stdout.flush();
 
     if args.makepotcar: make_potcar(xc=args.potcarxc,wDir='.')
@@ -694,9 +695,14 @@ if __name__ == '__main__':
 
     parser.add_argument('-sf','--sepfol', default=False,action='store_true', help='to save geometries in separate folders (e.g. for VASP runs). Default: all output is written in the same directory (%s).'%outdir)
 
-    parser.add_argument('-np', '--nprocs',type=int, default=32,help="No of processes to start for each CASTEP/VASP calculation throuh mpirun. Def:32")
+    parser.add_argument('-np', '--nprocs',type=int, default=32,help="No of processes to start for each CASTEP/VASP calculation through srun/mpirun. Def:32")
 
-    parser.add_argument('-nt', '--ntasks',type=int, default=1,help="No of processes to start for each VASP calculation throuh mpirun. Def:1")
+    parser.add_argument('-nt', '--ntasks',type=int, default=1,help="No of CASTEP/VASP tasks to run simultaneously. Def:1")
+
+    parser.add_argument('-nn', '--nnodes',type=int, default=1,help="No of nodes to run CASTEP/VASP runs through srun. Def:1")
+
+    parser.add_argument('-mpi','--mpirun', default=False,action='store_true', help='Use mpirun for parallel runs. Default: srun is used')
+
 
     parser.add_argument("-t","--temp", type=float, default=298.15, help="Temperature at which the configrational thermodnamics is computed. Def: 298.15K")
 
@@ -770,7 +776,7 @@ if __name__ == '__main__':
             elif args.restart: 
                 print("StepX folders exist. Will try to restart the VASP calculations as requested.")
             else: 
-                print("StepX folders exists. Not overwriting, use -ow to overwrite."%outdir)
+                print("StepX folders exists. Not overwriting, use -ow to overwrite.")
                 exit()
     else:
         seq=nDops[0]
@@ -808,7 +814,8 @@ if __name__ == '__main__':
                 if args.overwrite: 
                         print("%s folder exists. Overwriting as requested."%outdir)
                         #os.system('rm -r ./%s'%(outdir))
-
+                elif args.restart:
+                        print("%s folder exists. Restarting as requested."%outdir)
                 else: 
                         print("%s folder exists. Not overwriting, use -ow to overwrite."%outdir)
                         exit()
@@ -1473,11 +1480,16 @@ if __name__ == '__main__':
                 if args.castep: 
                     try:cascmd=os.getenv("CASTEP_COMMAND")
                     except:cascmd=''
-                    if cascmd==None:cascmd="mpirun -np %s %s"%(args.nprocs/args.ntasks,args.castepexe)
+                    if cascmd==None:
+                        if args.mpirun: cascmd="mpirun -np %s %s"%(args.nprocs/args.ntasks,args.castepexe)
+                        else: cascmd='srun -n %d -N %d %s'%(args.nprocs/args.ntasks,max(1,args.nnodes/args.ntasks),args.castepexe)
                     print ("Castep command: ", cascmd)
                 elif args.vasp:
                     exe=getenv('VASP_COMMAND')
-                    if not exe: exe='mpirun -np %d %s'%(args.nprocs/args.ntasks,args.vaspexe)
+                    if not exe: 
+                        if args.mpirun: exe='mpirun -np %d %s'%(args.nprocs/args.ntasks,args.vaspexe)
+                        else: exe='srun -n %d -N %d %s'%(args.nprocs/args.ntasks,max(1,args.nnodes/args.ntasks),args.vaspexe)
+
                     print("VASP command: ", exe)
 
                 
@@ -1591,7 +1603,7 @@ if __name__ == '__main__':
                         system('cp ../../../%s/INCAR ../../../%s/POTCAR ../../../%s/KPOINTS . &> /dev/null '%(args.idir,args.idir,args.idir)) #replace with cwd
                         #system('cp %s/%s/INCAR %s/%s/POTCAR %s/%s/KPOINTS .'%(cwd,args.idir,cwd,args.idir,cwd,args.idir)) #replace with cwd
                         try: e2,atoms=call_vasp_v2(fname,exe=exe,xc=args.xc,mgms=args.magmoms,hubU=hubU)
-                        except: print('Problem with DFT calc of %s, skipping...'%fname);return (e1,0.0,atoms,'')
+                        except Exception as err: print('Problem with DFT calc of %s, (%s) skipping...'%(fname,err));chdir(cwd); return (e1,0.0,atoms,'P1 (1)')
 
                         #ASE does not get the Pressure right when restarting
                         P=float(Popen4("""grep pressure OUTCAR | tail -1 | awk '{print ($4+$9)*0.1}' """)[0][0]) #kB to GPa
@@ -1677,7 +1689,9 @@ if __name__ == '__main__':
                 if args.seq>0: fn=['Step%d/%s/config_%d.res'%(step,outdir,i) for i in range(len(energies))]
                 else:fn=['%s/config_%d.res'%(outdir,i) for i in range(len(energies))]
 
+                #try:
                 tmp=[fn,Em_bar,[int(sg.split('(')[-1].replace(')','')) for sg in sgs],degens]
+                #except: tmp=[fn,Em_bar,[[0 for sg in sgs],degens]]
                 for i,t in enumerate(tmp):
                     seqconfigs[i].extend(t)
 
@@ -1692,9 +1706,11 @@ if __name__ == '__main__':
             for i in range(len(seqconfigs[0])):
               print(seqconfigs[0][i],seqconfigs[1][i],seqconfigs[2][i])
 
+# TO-DO: fix the isue with the configs energies being sorted from larger to smaller (rather than vice versa) when using seqtype == S (symmetric)
         if args.seqtype=='S': #symmetry-based sorting
+            #ind=list(np.lexsort((seqconfigs[1],seqconfigs[2]),axis=-1))  #this does not help.
             ind=reversed(list(np.lexsort((seqconfigs[1],seqconfigs[2]),axis=-1))) #both works
-            #ind=reversed(list(np.argsort(seqconfigs[2],axis=-1)))
+            #ind=reversed(list(np.argsort(seqconfigs[2],axis=-1))) #both works
         elif args.seqtype=='E' : #energy-based sorting
             #ind=np.lexsort((seqconfigs[2],seqconfigs[1]),axis=-1)
             ind=np.argsort(seqconfigs[1],axis=-1)

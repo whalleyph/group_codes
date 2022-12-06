@@ -4,9 +4,9 @@
 # Modified by Tanmoy on March 9, 2022
 
 if [ $# = 0 ]; then
-      out="OUTCAR"
+    out="OUTCAR"
 else
-      out=$1
+    out=$1
 fi
 echo $out
 rm *.temp
@@ -20,14 +20,14 @@ typenum=`grep -m 1 'ions per type' $out |head -1 |awk '{print NF}' `
 typenum=$(($typenum-4)) # how many types of ions
 for i in `seq $typenum`
 do
-                elename=`grep -m $i POTCAR $out |tail -1 |awk '{print $3}'`
-        j=$(($i+4))
-        elenum=`grep -m 1 "ions per type" $out |awk -v j=$j '{print $j}'`
-        echo $elename $elenum
-        for j in `seq $elenum`
-        do
-            echo $elename  >> type.temp
-        done
+    elename=`grep -m $i POTCAR $out |tail -1 |awk '{print $3}'`
+    j=$(($i+4))
+    elenum=`grep -m 1 "ions per type" $out |awk -v j=$j '{print $j}'`
+    echo $elename $elenum
+    for j in `seq $elenum`
+    do
+        echo $elename  >> type.temp
+    done
 done
 grep -A 3 -m 1 "direct lattice vectors" $out \
 |tail -3 |awk '{printf("%f %f %f \n",$1,$2,$3)}' >primvec.temp
@@ -44,37 +44,37 @@ fi
 
 for i in `seq $typenum`
 do
-        elename=`grep -m $i POTCAR $out |tail -1 |awk '{print $3}'`
-        j=$(($i+4))
-        elenum=`grep -m 1 "ions per type" $out |awk -v j=$j '{print $j}'`
-        echo $elename $elenum
-        for j in `seq $elenum`
-        do
-            echo $elename  >> type.temp
-        done
+    elename=`grep -m $i POTCAR $out |tail -1 |awk '{print $3}'`
+    j=$(($i+4))
+    elenum=`grep -m 1 "ions per type" $out |awk -v j=$j '{print $j}'`
+    echo $elename $elenum
+    for j in `seq $elenum`
+    do
+        echo $elename  >> type.temp
+    done
 done
 
 echo "num of str: $num_str"
 
 for i in `seq $num_str`
 do
-      energy=`head -n $i energy.temp|tail -1`
-      echo "# total energy = $energy eV" >> str_$i.xsf
-      echo " " >> str_$i.xsf
-      echo "CRYSTAL" >> str_$i.xsf
-      echo "PRIMVEC" >> str_$i.xsf
-      cat primvec.temp >> str_$i.xsf
-      echo "PRIMCOORD" >> str_$i.xsf
-      echo "$num_atom 1" >> str_$i.xsf
-      end=`echo "$i*$num_atom" |bc `
-      head -n $end pos.temp|tail -n $num_atom >pos_i.temp
-      paste type.temp pos_i.temp >> str_$i.xsf
-      mv str_$i.xsf $out-$i.xsf
+    energy=`head -n $i energy.temp|tail -1`
+    echo "# total energy = $energy eV" >> str_$i.xsf
+    echo " " >> str_$i.xsf
+    echo "CRYSTAL" >> str_$i.xsf
+    echo "PRIMVEC" >> str_$i.xsf
+    cat primvec.temp >> str_$i.xsf
+    echo "PRIMCOORD" >> str_$i.xsf
+    echo "$num_atom 1" >> str_$i.xsf
+    end=`echo "$i*$num_atom" |bc `
+    head -n $end pos.temp|tail -n $num_atom >pos_i.temp
+    paste type.temp pos_i.temp >> str_$i.xsf
+    mv str_$i.xsf $out-$i.xsf
 done
 
 rm *.temp
 if [ ! -d "struc" ]; then
-      mkdir struc
+    mkdir struc
 fi
 mv *xsf struc
 
