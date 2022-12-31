@@ -23,9 +23,8 @@ from ase.io import read as read_atoms
 from ase.io.extxyz import write_extxyz, write_xyz
 from matscipy import elasticity
 import matplotlib.pyplot as plt
-from concurrent.futures import ProcessPoolExecutor
-import functools
-from itertool import repeat
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from itertools import repeat
 
 
 class bcolors:  # ooooo pretty colours
@@ -116,12 +115,13 @@ def get_stats(nsymbols):
     return stat_dict
 
 
-def warn_and_quit(s, skip=True):
+def warn_and_quit(s, i, skip=True):
     if s in ["energy", "forces", "stess tensor"]:
         printc(f"Cannot find the {s}. Quitting...", bcolor=bcolors.FAIL)
     else:
         printc("Failure:", bcolor=bcolors.FAIL)
         tqdm.write(s)
+        tqdm.write(i)
         tqdm.write(traceback.format_exc())
     if not skip:
         exit(1)
@@ -130,7 +130,6 @@ def warn_and_quit(s, skip=True):
 
 
 def convert_atoms(_file, stem, options, atom_index) -> int:
-    stem = new_stems[idx]
     try:
 
         # atoms = read_castep(castep_file)
@@ -151,6 +150,9 @@ def convert_atoms(_file, stem, options, atom_index) -> int:
         updated_atoms = []
         idc = []
         # There's probably a better, more idiomatic way to do this. But hey, it works.
+
+        numfiles = len(atoms_list)
+
         for idx, atoms in enumerate(atoms_list):
             idc.append(idx)
 
@@ -161,21 +163,21 @@ def convert_atoms(_file, stem, options, atom_index) -> int:
                     atoms.info["energy"] = energy
                     energies.append(energy)
                 except:
-                    warn_and_quit("energy")
+                    warn_and_quit("energy", stem)
 
             if options["F"]:
                 try:
                     forces = atoms.get_forces()
                     # atoms.info["forces"] = forces
                 except:
-                    warn_and_quit("forces")
+                    warn_and_quit("forces", stem)
 
             if options["V"]:
                 try:
                     mtx, V_str = get_virial(atoms)
                     atoms.info["virial"] = V_str
                 except:
-                    warn_and_quit("stress tensor/virial")
+                    warn_and_quit("stress tensor/virial", stem)
 
             if options["H"]:
                 raise NotImplementedError(
@@ -208,10 +210,10 @@ def convert_atoms(_file, stem, options, atom_index) -> int:
                     fileobj,
                     atoms,
                     write_info=True,
-                    columns=cols,
+                    columns=["symbols", "positions"],
                     write_results=options["F"],
                 )
-        return 0
+        return 0, numfiles
         # plt.scatter(x=idc, y=energies)
         # plt.show()
 
@@ -219,9 +221,8 @@ def convert_atoms(_file, stem, options, atom_index) -> int:
     # and will either quit or skip to the next frame.
     except Exception as e:
 
-        warn_and_quit(s=traceback.format_exc(), skip=True)
-        failed.append(_file)
-        return 1
+        warn_and_quit(s=traceback.format_exc(), i="", skip=True)
+        return 1, 0
 
 
 title = pyfiglet.figlet_format("DFT2XYZ", font="larry3d")
@@ -330,12 +331,12 @@ options = {"E": args.energy, "F": args.forces,
            "fqhl": args.fqhl, "fl": args.firstlast}
 if all(value == False for value in options.values()) == True:
     warn_and_quit(
-        "You must include at least 1 property: One or more of -e, -f, -v, -hs"
+        "You must include at least 1 property: One or more of -e, -f, -v, -hs", ""
     )
 
 if all(v == True for v in [fl, fqhl]) == True:
     warn_and_quit(
-        "You must chose either the first and last, or the first/quarter/half/last steps.\nYou cannot have both!"
+        "You must chose either the first and last, or the first/quarter/half/last steps.\nYou cannot have both!", ""
     )
 
 # Set the index or slice to retrieve with ase.io.read()
@@ -348,111 +349,37 @@ else:
 new_stems = get_stems(inputs, use_parent=parent_uuid)
 failed = []
 cols = ["symbols", "positions"]
+usethreads = False
+if not usethreads:
+    with ProcessPoolExecutor(int(os.getenv("OMP_NUM_THREADS"))) as exec:
+        results = list(
+            tqdm(
+                exec.map(
+                    convert_atoms, inputs, new_stems, repeat(
+                        options), repeat(atom_index)
+                ), total=len(inputs)
+            )
+        )
+else:
+    with ThreadPoolExecutor() as exec:
+        results = list(
+            tqdm(
+                exec.map(
+                    convert_atoms, inputs, new_stems, repeat(
+                        options), repeat(atom_index)
+                ), total=len(inputs)
+            )
+        )
 
-with ProcessPoolExecutor() as exec, tqdm(total=len(inputs)) as pbar:
-    results = list(tqdm(exec.map(convert_atoms, inputs, stems, reprat(
-        options), repeat(atom_index))), total=len(inputs))
+results_status, numfiles_list = tuple(zip(*results))
 
-for idx, _file in enumerate(tqdm(inputs)):
-    tqdm.write(f"Converting {_file}...")
-    stem = new_stems[idx]
-    try:
-
-        # atoms = read_castep(castep_file)
-        raw_atoms_list = read_atoms(_file, index=atom_index)
-
-        # If only the final frame is read, then atoms_list will be an atom object. We
-        # need to convert is to something iterable, hence the square braces.
-        if atom_index == -1:
-            raw_atoms_list = [raw_atoms_list]
-            multiple = False
-        elif fqhl == False:
-            multiple = True
-        atoms_list = process_atoms(raw_atoms_list, fqhl, fl)
-        tqdm.write(f"  Structures: {len(atoms_list)}")
-
-        energies = []
-        updated_atoms = []
-        idc = []
-        # There's probably a better, more idiomatic way to do this. But hey, it works.
-        for idx, atoms in enumerate(atoms_list):
-            idc.append(idx)
-            if args.superverbose:
-                if multiple:
-                    tqdm.write(f"	 Step {idx+1}")
-                else:
-                    tqdm.write(f"	 Final ionic step")
-
-            ### THIS IS THE BIT WE ALL CARE ABOUT!!! ###
-            if options["E"]:
-                try:
-                    energy = atoms.get_potential_energy(force_consistent=True)
-                    atoms.info["energy"] = energy
-                    energies.append(energy)
-                except:
-                    warn_and_quit("energy")
-
-            if options["F"]:
-                try:
-                    forces = atoms.get_forces()
-                    # atoms.info["forces"] = forces
-                except:
-                    warn_and_quit("forces")
-
-            if options["V"]:
-                try:
-                    mtx, V_str = get_virial(atoms)
-                    atoms.info["virial"] = V_str
-                except:
-                    warn_and_quit("stress tensor/virial")
-
-            if options["H"]:
-                raise NotImplementedError(
-                    "Hessian extraction not implemented.")
-
-            updated_atoms.append(atoms)
-
-            # Fitting the energy minimisation curve
-            # max_extraction_count = 5
-            # steps = len(energies)
-            # max_idx = steps - 1
-            # to_get = []
-            # for x in range(max_extraction_count):
-            #	  div = 1
-            #	  to_get.append = max_idx/div
-            #	  div += 1
-
-            # Writing the file, adding the step index if multiple are used.
-            if fqhl:
-                name = f"{stem}_sample{idx+1}".split("/")[-1]
-            elif multiple:
-                name = f"{stem}_step{idx+1}".split("/")[-1]
-            else:
-                name = stem.split("/")[-1]
-            symbols.append(atoms.get_chemical_symbols())
-            # Check whether all ionioc steps are selected, or just the last one.
-
-            with open(f"{name}.xyz", "w") as fileobj:
-                write_extxyz(
-                    fileobj,
-                    atoms,
-                    write_info=True,
-                    columns=cols,
-                    write_results=options["F"],
-                )
-
-        # plt.scatter(x=idc, y=energies)
-        # plt.show()
-
-    # This prints out the entire traceback if an error if caught (typically with ase.io.read)
-    # and will either quit or skip to the next frame.
-    except Exception as e:
-        warn_and_quit(s=traceback.format_exc(), skip=True)
-        failed.append(_file)
-    printc(f"Done", bcolor=bcolors.OKGREEN)
+tot = np.sum(np.array(numfiles_list))
+failed = [x for x in inputs if results_status[inputs.index(x)] != 0]
 
 
 printc("=== Complete ===\n", bcolor=bcolors.OKGREEN + bcolors.BOLD)
+
+printc(f"{tot} files written.\n", bcolor=bcolors.OKGREEN)
 d = get_stats(symbols)
 # print(symbols)
 printc(f"Atom occurences", bcolor=bcolors.HEADER + bcolors.BOLD)

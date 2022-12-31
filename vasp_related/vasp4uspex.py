@@ -95,14 +95,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-N",
-        "--nodes",
-        default=1,
-        type=int,
-        help="Define the number of nodes as required by the srun command. Def.: 1",
-    )
-
-    parser.add_argument(
         "-mgm",
         "--magmoms",
         default=None,

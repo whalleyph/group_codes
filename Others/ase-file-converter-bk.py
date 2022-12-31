@@ -231,6 +231,8 @@ parser.add_argument('-ind','--index', type=int,required=False, help='Index of th
 
 parser.add_argument('-skip','--skip', type=int,default=1,required=False, help='To skip steps while reading a trajectory. Def: All steps')
 
+parser.add_argument('-wrap','--wrap',default=False,action='store_true', help='All atoms are forced back into the cell. Def: No wrapping done.')
+
 parser.add_argument('-uw','--unwrap',default=False,action='store_true', help='Generate unwrapped coordinates needed for MSD and VFAC, in case input coordinates are wrapped into cell. Def: No unwrapping done.')
 
 parser.add_argument('-r','--rep', nargs=3, type=int,help="Repeat the resulting structure in a, b, c directions, e.g. -r 2 2 1")
@@ -259,6 +261,9 @@ parser.add_argument('-group','--group', type=str, choices=['no'], help="Group th
 parser.add_argument('-zlim', '--zlim',type=float, nargs=2, help="Only take atoms within a range of z position, e.g. -zlim 10.0 25.0")
 
 parser.add_argument('-sc','--setcell', nargs=3, type=float,help="Modify cell parameters without distorting the structure")
+
+parser.add_argument('-scale','--scale', type=float,help="Scale the cell parameters  without distorting the structure (atomic positions will be scaled as well).")
+
 
 parser.add_argument('-mint','--min_tilt', default=False,action='store_true', help='Minimise the tilt angle of the given cell.Def: No')
 
@@ -404,6 +409,17 @@ for inpf in args.inpf:
               for i,at in enumerate(atoms):
                 atoms[i].set_cell(args.setcell,scale_atoms=0);atoms[i].set_pbc(1)
 
+        elif args.scale:
+            cell=atoms.get_cell()
+
+            if not args.ifAll:
+              atoms.set_cell(cell*float(args.scale),scale_atoms=1);atoms.set_pbc(1)
+
+            else:
+              for i,at in enumerate(atoms):
+                atoms[i].set_cell(cell*float(args.scale),scale_atoms=1);atoms[i].set_pbc(1)
+
+
         if args.ifAll: print('%d steps were read from %s, skipping %d steps.'%(len(atoms),inpf,args.skip));stdout.flush()
         
         if args.ifAll and args.unwrap:
@@ -430,6 +446,16 @@ for inpf in args.inpf:
         if args.unwrap and not args.ifAll: print ("Unwrapping of the atomic coordinates requires a multi-step/trajectory input"); exit()
 
         if args.ifAll and (args.ifPrim or args.rep or args.interstices or args.airss or args.molecule):  print ("Primitive cell, cell repetition/extension, adding interstices and elemental swapping, AIRSS input and LAMMPS molecule input are not compatible with a multi-step/trajectory input"); exit()  #args.swaps or   
+
+
+        if args.wrap:
+            if args.ifAll:
+              for st in range(len(atoms)): #over time/geom step.
+                #if args.noSubs and st  in subs: continue #skip the substrate atoms
+                atoms[st].wrap()
+            else:
+               print('wrapping...')
+               atoms.wrap()
 
 
         if args.swaps:
