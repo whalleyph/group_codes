@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import numpy as np
 import argparse
 import ase.io
@@ -14,6 +14,8 @@ import ase.build.tools
 import matplotlib.pyplot as plt
 
 """LAST EDIT: jpd47 07/05/2017"""
+#This is the former join8.py
+
 def calc_R1(x1,y1):
         #gives a rotation matrix that will rotate x1 onto y1
         Id = np.array([[1,0,0],[0,1,0],[0,0,1]])

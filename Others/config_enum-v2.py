@@ -736,6 +736,8 @@ if __name__ == '__main__':
 
     if args.castep:args.seqtype='E'
 
+    if args.seq==0:args.seq=int(args.noDopants[0])
+
     #Parse the Hubbard_U info and make the dict
     hubU={}
     if args.hubU:

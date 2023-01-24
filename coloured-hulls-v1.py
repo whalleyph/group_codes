@@ -178,7 +178,7 @@ for doc in polished_hull.cursor:
     elif prov == 'MP':marker='o';color='magenta';z=4
     elif prov == 'ConfigEnum':marker='o';color='green';z=7 ; #continue
     elif prov == 'GA':marker='o';color='cyan';z=6
-    elif prov == 'AIRSS':marker='o';color='orange';z=7 ; continue
+    elif prov == 'AIRSS':marker='o';color='orange';z=7 ; #continue
     #black; color='xkcd:gold'
     if doc['space_group'] == "P1":marker='x';#continue
     st=(doc['stoichiometry'])

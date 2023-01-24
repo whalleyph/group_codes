@@ -1,0 +1,5 @@
+#!/bin/bash
+
+awk '/ <structure>/{print " <calculation>"}1' vasprun.xml > file2
+awk '/totalsc/{print;print " </calculation>";next}1' file2 > vasprun_new.xml
+rm file2
